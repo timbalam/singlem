@@ -396,7 +396,7 @@ ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTA
     def test_archive_otu_groopm_compatibility(self):
         expected = [('contig_1', '4.11.22seqs', 'Root; d__Bacteria; p__Firmicutes')]
 
-        inseqs = '''>contig_1
+        inseqs = '''>contig_1 abcd
 ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTACGTCGTGCAGCTGAA
 '''
         with tempfile.NamedTemporaryFile(suffix='.fa') as n:
@@ -406,11 +406,11 @@ ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTA
             cmd = "%s pipe --sequences %s --archive_otu_table /dev/stdout --singlem_packages %s" % (
                 path_to_script, n.name, os.path.join(path_to_data,'4.11.22seqs.gpkg.spkg'))
             
-            j = json.reads(extern.run(cmd))
+            j = json.loads(extern.run(cmd))
             fields = j['fields']
             data = j['otus']
             self.assertEqual(expected,
-                             zip(data[fields.index('read_names')], data[fields.index('gene')], data[fields.index('taxonomy')])
+                             [(name, row[fields.index('gene')], row[fields.index('taxonomy')]) for row in data for name in row[fields.index('read_names')]]
                             )
         
 
