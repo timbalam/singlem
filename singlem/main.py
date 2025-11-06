@@ -256,6 +256,7 @@ def add_condense_arguments(parser):
         help="Condense from the archive tables newline separated in this file")
     input_condense_arguments.add_argument('--input-gzip-archive-otu-table-list',
         help="Condense from the gzip'd archive tables newline separated in this file")
+    input_condense_arguments.add_argument('--em-tim', action="store_true") 
 
     output_condense_arguments = parser.add_argument_group("Output arguments (1+ required)")
     output_condense_arguments.add_argument('-p', '--taxonomic-profile', metavar='filename', help="output OTU table")
@@ -1369,7 +1370,8 @@ def main():
             output_otu_table = args.taxonomic_profile,
             krona = args.taxonomic_profile_krona,
             min_taxon_coverage = args.min_taxon_coverage,
-            output_after_em_otu_table = args.output_after_em_otu_table)
+            output_after_em_otu_table = args.output_after_em_otu_table,
+            em_tim = args.em_tim)
 
     elif args.subparser_name == 'trim_package_hmms':
         from singlem.trim_package_hmms import PackageHmmTrimmer

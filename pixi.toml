@@ -62,8 +62,16 @@ python-build = "*"
 setuptools-scm = "*"
 gtdbtk = "==2.4.1" # Must match the version of GTDB release used to make the default metapackage.
 
+[feature.kingfisher.dependencies]
+kingfisher = "*"
+
+[feature.sylph.dependencies]
+sylph = "*"
+
 [environments]
 dev = ["dev"]
+kingfisher = {features = ["kingfisher"], no-default-feature = true}
+sylph = {features = ["sylph"], no-default-feature = true}
 
 [tasks]
 test-base = "pytest test"
