@@ -68,10 +68,18 @@ kingfisher = "*"
 [feature.sylph.dependencies]
 sylph = "*"
 
+[feature.snakemake.dependencies]
+snakemake = "*"
+
+[feature.opal.dependencies]
+cami-opal = "==1.0.11"
+
 [environments]
 dev = ["dev"]
 kingfisher = {features = ["kingfisher"], no-default-feature = true}
 sylph = {features = ["sylph"], no-default-feature = true}
+snakemake = {features = ["snakemake"], no-default-feature = true}
+opal = {features = ["opal"], no-default-feature = true}
 
 [tasks]
 test-base = "pytest test"

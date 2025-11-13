@@ -1,0 +1,151 @@
+from os.path import join
+
+tools = ['singlem', 'sylph']
+
+datasets = ['SRR606249']
+
+singlem_metapackage = 'db/S5.4.0.GTDB_r226.metapackage_20250331.smpkg'
+sylph_package = 'db/gtdb-r226-c200-dbv1.syldb'
+gtdb_bac120_tax = 'db/bac120_taxonomy_r226.tsv'
+gtdb_ar53_tax = 'db/ar53_taxonomy_r226.tsv'
+
+output_directory = 'real_data/1_synthetic'
+fastq_dir = join(output_directory, 'reads')
+truth_dir = join(output_directory, 'truth')
+tool_output_dirs = list(['output_' + tool for tool in tools])
+output_dirs_dict = dict(zip(tools, tool_output_dirs))
+
+rule all:
+    input:
+        expand(join(output_directory, "{tool_output}/opal/{sample}.opal_report"), sample=datasets, tool_output=tool_output_dirs)
+
+rule download_all:
+    input:
+        expand(join(fastq_dir, "{sample}.1.fq.gz"), sample=datasets),
+        expand(join(fastq_dir, "{sample}.2.fq.gz"), sample=datasets),
+        expand(join(truth_dir, "{sample}-metadata-download.done"), sample=dataset))
+
+rule download_fastq:
+    output:
+        r1=join(fastq_dir, "{sample}.1.fq.gz"),
+        r2=join(fastq_dir, "{sample}.2.fq.gz"),
+        done=touch(join(fastq_dir, "{sample}.done"))
+    params:
+        output_dir = fastq_dir
+    shell:
+        "pixi run -e kingfisher " \
+        "kingfisher get -r {sample} " \
+        "-output_directory {params.output_dir} " \
+        "-m ena-ftp prefetch "
+
+rule download_SRR606249_metadata:
+    output:
+        done=touch(join(truth_dir, "SRR606249-metadata-download.done'))
+        xls=join(truth_dir, "NIHMS439897-supplement-Supp_Table_S1.xlsx")
+    shell:
+        "wget --user-agent=\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36\" " \
+        "-O {output.xls} " \
+        "https://pmc.ncbi.nlm.nih.gov/articles/instance/3665634/bin/NIHMS439897-supplement-Supp_Table_S1.xlsx"
+
+rule tool_condensed_to_biobox:
+    input:
+        profile = join(output_directory, "{tool_output}/{tool}/{sample}.profile")
+    params:
+        truth = join(truth_dir, "{sample}.condensed.biobox")
+        script = join(output_directory, "bin/condensed_profile_to_biobox.py")
+    output:
+        biobox = join(output_directory, "{tool_output}/biobox/{sample}.biobox")
+    shell:
+        "pixi run " \
+        "{params.script} --input-condensed-table {input.profile} " \
+        "--output-biobox {output.biobox} --template-biobox {params.truth} "
+
+rule opal:
+    input:
+        biobox = join(output_directory, "{tool_output}/biobox/{sample}.biobox"
+    params:
+        output_dir = join(output_directory, "{tool_output}"),
+        output_opal_dir = join(output_directory, "{tool_output}/opal/{sample}.opal_output_directory",
+        truth = join(truth_dir, "{sample}.condensed.biobox"),
+    output:
+        report=join(output_directory, "{tool_output}/opal/{sample}.opal_report"),
+        done=touch(join(output_directory, "{tool_output}/opal/{sample}.opal_report.done"))
+    shell:
+        "pixi run -e opal " \
+        "opal.py -g {params.truth} -o {params.output_opal_dir} {input.biobox} || echo 'expected opal non-zero exit status'; mv {params.output_opal_dir}/results.tsv {output.report} && rm -rf {params.output_opal_dir}"
+
+
+###############################################################################################
+###############################################################################################
+###############################################################################################
+#########
+######### tool-specific rules - singlem first
+
+rule singlem_run_pipe:
+    input:
+        r1=join(fastq_dir, "{sample}.1.fq.gz"),
+        r2=join(fastq_dir, "{sample}.2.fq.gz"),
+        db=singlem_metapackage,
+    output:
+        report=join(output_dirs_dict['singlem'], "singlem/{sample}.otu_archive.json"),
+        done=touch(join(output_dirs_dict['singlem'], "singlem/{sample}.otu_archive.done"))
+    threads:
+        num_threads
+    log:
+        join(output_dirs_dict['singlem'], "logs/singlem/{sample}.log")
+    shell:
+        "pixi run " \
+        "singlem pipe --threads {threads} -1 {input.r1} -2 {input.r2} " \
+        "--archive-otu-table {output.report} --metapackage {input.db} &> {log}"
+
+rule singlem_run_condense:
+    input:
+        report=join(output_dirs_dict['singlem'], "singlem/{sample}.otu_archive.json"),
+        db=singlem_metapackage
+    output:
+        profile=join(output_dirs_dict['singlem'], "singlem/{sample}.profile"),
+        done=touch(join(output_dirs_dict['singlem'], "singlem/{sample}.profile.done"))
+    log:
+        join(output_dirs_dict['singlem'], "logs/singlem/{sample}.log")
+    shell:
+        "pixi run " \
+        "singlem condense --input-archive-otu-table {input.report} -p {output.profile} --metapackage {input.db} &> {log}"
+
+
+###############################################################################################
+###############################################################################################
+###############################################################################################
+######### sylph
+
+rule sylph_run:
+    input:
+        r1=join(fastq_dir, "{sample}.1.fq.gz"),
+        r2=join(fastq_dir, "{sample}.2.fq.gz"),
+        db=sylph_db
+    output:
+        report=join(output_dirs_dict['sylph'], "output/{sample}.tsv"),
+        done=touch(join(output_dirs_dict['sylph'], "output/{sample}.done"))
+    threads: num_threads
+    resources:
+        mem_mb=32000
+    log:
+        join(output_dirs_dict['sylph'], "logs/sylph/{sample}.log")
+    shell:
+        "pixi run -e sylph " \
+        "sylph profile {input.db} -1 {input.r1} -2 {input.r2} -t {threads} > {output.report} 2> {log}"
+
+rule sylph_report_to_condensed:
+    input:
+        report=join(output_dirs_dict['sylph'], "output/{sample}.tsv"),
+    output:
+        profile = join(output_dirs_dict['sylph'], "sylph/{sample}.profile")
+    params:
+        script = join(output_directory, 'bin/sylph_to_condensed.py")
+        bac120_tax = gtdb_bac120_tax,
+        arc53_tax = gtdb_arc53_tax
+    shell:
+        "pixi shell " \
+        "python3 {params.script} --sylph-genome {input.report} " \
+        "--sample {wildcards.sample} " \
+        "--bac-tax {bac120_tax} " \
+        "--arc-tax {arc53_tax} > {output.profile}"
