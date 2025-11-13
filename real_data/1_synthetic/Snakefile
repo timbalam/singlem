@@ -14,6 +14,9 @@ fastq_dir = join(output_directory, 'reads')
 truth_dir = join(output_directory, 'truth')
 tool_output_dirs = list(['output_' + tool for tool in tools])
 output_dirs_dict = dict(zip(tools, tool_output_dirs))
+num_threads = 1
+
+#####################################################################
 
 rule all:
     input:
@@ -21,37 +24,60 @@ rule all:
 
 rule download_all:
     input:
-        expand(join(fastq_dir, "{sample}.1.fq.gz"), sample=datasets),
-        expand(join(fastq_dir, "{sample}.2.fq.gz"), sample=datasets),
-        expand(join(truth_dir, "{sample}-metadata-download.done"), sample=dataset))
+        expand(join(fastq_dir, "{sample}_1.fastq.gz"), sample=datasets),
+        expand(join(fastq_dir, "{sample}_2.fastq.gz"), sample=datasets),
+        expand(join(truth_dir, "{sample}.condensed.biobox"), sample=datasets)
 
 rule download_fastq:
     output:
-        r1=join(fastq_dir, "{sample}.1.fq.gz"),
-        r2=join(fastq_dir, "{sample}.2.fq.gz"),
+        r1=join(fastq_dir, "{sample}_1.fastq.gz"),
+        r2=join(fastq_dir, "{sample}_2.fastq.gz"),
         done=touch(join(fastq_dir, "{sample}.done"))
-    params:
-        output_dir = fastq_dir
     shell:
         "pixi run -e kingfisher " \
-        "kingfisher get -r {sample} " \
-        "-output_directory {params.output_dir} " \
+        "kingfisher get -r {wildcards.sample} " \
+        "--output_directory {fastq_dir} " \
         "-m ena-ftp prefetch "
 
 rule download_SRR606249_metadata:
     output:
-        done=touch(join(truth_dir, "SRR606249-metadata-download.done'))
+        done=touch(join(truth_dir, "SRR606249-metadata-download.done")),
         xls=join(truth_dir, "NIHMS439897-supplement-Supp_Table_S1.xlsx")
     shell:
-        "wget --user-agent=\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36\" " \
+        "wget --user-agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36' " \
         "-O {output.xls} " \
         "https://pmc.ncbi.nlm.nih.gov/articles/instance/3665634/bin/NIHMS439897-supplement-Supp_Table_S1.xlsx"
+
+rule generate_truth_condensed:
+    input:
+        done=join(truth_dir, "SRR606249-metadata-download.done"),
+        xls=join(truth_dir, "NIHMS439897-supplement-Supp_Table_S1.xlsx")
+    output:
+        condensed = truth_dir + "/{sample}.condensed",
+        done = touch(truth_dir + "/{sample}.finished"),
+    threads: num_threads
+    params:
+        script = join(output_directory, "bin/generate_truth.py")
+    shell:
+        "pixi run " \
+        "python3 {params.script} --threads {threads} --coverage-file {input.xls} --gtdb-bac-tax {gtdb_bac120_tax} --gtdb-ar-tax {gtdb_ar53_tax} --output-condensed {output.condensed}"
+
+rule truth_condensed_to_biobox:
+    input:
+        condensed = join(truth_dir, "{sample}.condensed"),
+    output:
+        biobox = join(truth_dir, "{sample}.condensed.biobox")
+    conda:
+        "envs/singlem.yml"
+    shell:
+        "{workflow.basedir}/../bin/condensed_profile_to_biobox.py --input-condensed-table {input.condensed} " \
+        "--output-biobox {output.biobox}"
 
 rule tool_condensed_to_biobox:
     input:
         profile = join(output_directory, "{tool_output}/{tool}/{sample}.profile")
     params:
-        truth = join(truth_dir, "{sample}.condensed.biobox")
+        truth = join(truth_dir, "{sample}.condensed.biobox"),
         script = join(output_directory, "bin/condensed_profile_to_biobox.py")
     output:
         biobox = join(output_directory, "{tool_output}/biobox/{sample}.biobox")
@@ -62,10 +88,10 @@ rule tool_condensed_to_biobox:
 
 rule opal:
     input:
-        biobox = join(output_directory, "{tool_output}/biobox/{sample}.biobox"
+        biobox = join(output_directory, "{tool_output}/biobox/{sample}.biobox")
     params:
         output_dir = join(output_directory, "{tool_output}"),
-        output_opal_dir = join(output_directory, "{tool_output}/opal/{sample}.opal_output_directory",
+        output_opal_dir = join(output_directory, "{tool_output}/opal/{sample}.opal_output_directory"),
         truth = join(truth_dir, "{sample}.condensed.biobox"),
     output:
         report=join(output_directory, "{tool_output}/opal/{sample}.opal_report"),
@@ -83,8 +109,8 @@ rule opal:
 
 rule singlem_run_pipe:
     input:
-        r1=join(fastq_dir, "{sample}.1.fq.gz"),
-        r2=join(fastq_dir, "{sample}.2.fq.gz"),
+        r1=join(fastq_dir, "{sample}_1.fastq.gz"),
+        r2=join(fastq_dir, "{sample}_2.fastq.gz"),
         db=singlem_metapackage,
     output:
         report=join(output_dirs_dict['singlem'], "singlem/{sample}.otu_archive.json"),
@@ -119,9 +145,9 @@ rule singlem_run_condense:
 
 rule sylph_run:
     input:
-        r1=join(fastq_dir, "{sample}.1.fq.gz"),
-        r2=join(fastq_dir, "{sample}.2.fq.gz"),
-        db=sylph_db
+        r1=join(fastq_dir, "{sample}_1.fastq.gz"),
+        r2=join(fastq_dir, "{sample}_2.fastq.gz"),
+        db=sylph_package
     output:
         report=join(output_dirs_dict['sylph'], "output/{sample}.tsv"),
         done=touch(join(output_dirs_dict['sylph'], "output/{sample}.done"))
@@ -136,16 +162,16 @@ rule sylph_run:
 
 rule sylph_report_to_condensed:
     input:
-        report=join(output_dirs_dict['sylph'], "output/{sample}.tsv"),
+        report=join(output_dirs_dict['sylph'], "output/{sample}.tsv")
     output:
         profile = join(output_dirs_dict['sylph'], "sylph/{sample}.profile")
     params:
-        script = join(output_directory, 'bin/sylph_to_condensed.py")
+        script = join(output_directory, "bin/sylph_to_condensed.py"),
         bac120_tax = gtdb_bac120_tax,
-        arc53_tax = gtdb_arc53_tax
+        ar53_tax = gtdb_ar53_tax
     shell:
         "pixi shell " \
         "python3 {params.script} --sylph-genome {input.report} " \
         "--sample {wildcards.sample} " \
         "--bac-tax {bac120_tax} " \
-        "--arc-tax {arc53_tax} > {output.profile}"
+        "--arc-tax {ar53_tax} > {output.profile}"

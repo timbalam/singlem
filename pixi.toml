@@ -74,12 +74,19 @@ snakemake = "*"
 [feature.opal.dependencies]
 cami-opal = "==1.0.11"
 
+[feature.truth.dependencies]
+python = ">=3.7"
+xlsx2csv = "*"
+fastexcel = "*"
+polars = "*"
+
 [environments]
 dev = ["dev"]
 kingfisher = {features = ["kingfisher"], no-default-feature = true}
 sylph = {features = ["sylph"], no-default-feature = true}
 snakemake = {features = ["snakemake"], no-default-feature = true}
 opal = {features = ["opal"], no-default-feature = true}
+truth = {features = ["truth"], no-default-feature = true}
 
 [tasks]
 test-base = "pytest test"
