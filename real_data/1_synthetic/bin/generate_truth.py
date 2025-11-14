@@ -48,7 +48,6 @@ if __name__ == '__main__':
     parent_parser.add_argument('--gtdb-bac-tax', required=True, help='Path to GTDB taxonomy file')
     parent_parser.add_argument('--gtdb-ar-tax', required=True, help='Path to GTDB taxonomy file')
     parent_parser.add_argument('--output-condensed', required=True, help='Path to output file in singlem condensed format')
-    parent_parser.add_argument('--threads', type=int, default=1, help='Number of threads to use')
 
     args = parent_parser.parse_args()
 
@@ -66,81 +65,66 @@ if __name__ == '__main__':
     output_condensed = os.path.abspath(args.output_condensed)
 
     # Read coverages
-    euk_coverages = pl.read_excel(
-        args.coverage_file,
-        engine = 'xlsx2csv',
-        read_options = dict(
-            skip_lines = 2,
-            nrows = 16
-        )
-    )
-    rem_coverages = pl.read_excel(
+    bot_coverages = pl.read_excel(
         args.coverage_file,
         engine = 'xlsx2csv',
         read_options = dict(
             skip_lines = 20
         )
     )
-    coverages = coverages[coverages['coverage'] > 0]
+    top_coverages = pl.read_excel(
+        args.coverage_file,
+        engine = 'xlsx2csv',
+        schema_overrides = bot_coverages.schema,
+        read_options = dict(
+            skip_lines = 2,
+            n_rows = 16,
+            null_values = "x",
+            ignore_errors = True
+        )
+    )
+    coverages = pl.concat([
+        top_coverages.select(
+            species = 'Organism Name',
+            phylum = 'Phylum',
+            abundance = 'Genome molecules /   ng gDNA'
+        ),
+        bot_coverages.select(
+            species = 'Organism Name',
+            phylum = 'Phylum',
+            abundance = 'Genome molecules /   ng gDNA'
+        )
+    ])
+    coverages = coverages.filter(pl.col('abundance') > 0]
     logging.info(f"Read {len(coverages)} coverages > 0.")
 
-    # Remove RNODE ones which are plasmids etc.
-    coverages = coverages[~coverages.otu.str.contains('RNODE')]
-    logging.info(f"After removing plasmids etc, {len(coverages)} coverages > 0 remain.")
+    bac = pl.read_csv(args.gtdb_bac_tax, separator = '\t',
+                      has_header = False,
+                      names = ['accession', 'gtdb_taxonomy'])
+    ar = pl.read_csv(args.gtdb_ar_tax, separator = '\t',
+                     has_header = False,
+                     names = ('accession', 'gtdb_taxonomy'))
+    taxonomies = pl.concat([
+        bac.select('gtdb_taxonomy'),
+        ar.select('gtdb_taxonomy')
+    ]).with_columns(
+        (pl.col('gtdb_taxonomy')
+            .str.extract_groups('p__(<phylum>[^;]+).*;s__(<species>.+)')
+          .alias('fields')
+          .to_frame()
+          .unnest('fields')
+        )
 
-    genomes = pd.read_csv(args.genome_list, sep='\t', header=None, names=['genome','fasta'])
-    logging.info(f"Read {len(genomes)} genome fasta paths.")
+    coverages_taxonomies = coverages.join(
+        taxonomies,
+        on = ["species", "phylum"]
+        how = "inner"
+    ).select(
+        sample = pl.lit("SRR606249"),
+        coverage = "abundance",
+        taxonomy = "gtdb_taxonomy"
+    )
 
-    bac = pl.read_csv('../bac120_metadata_r207.tsv', separator='\t', infer_schema_length=100000, ignore_errors=True)
-    ar = pl.read_csv('../ar53_metadata_r207.tsv', separator='\t', infer_schema_length=100000, ignore_errors=True)
-    metadata = pl.concat([
-        bac.select('accession', 'genome_size', 'gtdb_taxonomy'),
-        ar.select('accession', 'genome_size', 'gtdb_taxonomy'),
-    ]).to_pandas()
-    logging.info(f"Read {len(metadata)} GTDB metadata entries.")
+    coverages_taxonomies.write_csv(args.output_condensed,
+                                   separator = '\t')
 
-    metadata['genome'] = [g[3:] for g in metadata['accession']] # get rid of GB_, RS_
-
-    # Shuffle genomes order so we get randomness
-    metadata = metadata.sample(frac=1)
-
-    g2 = pd.merge(genomes, metadata, on='genome', how='inner')
-
-    # Make paths absolute so that they work in a tempdir
-    g2['fasta'] = g2['fasta'].apply(lambda x: os.path.abspath(x))
-
-    read_length = 150
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
-        os.makedirs('simulated_reads')
-        sim_commands = []
-        with open(args.output_genomewise_coverage, 'w') as genome_wise_f:
-            genome_wise_f.write("accession\tcoverage\tfasta\ttaxonomy\n")
-            with open(output_condensed, 'w') as f:
-                f.write("sample\tcoverage\ttaxonomy\n")
-                tax_to_coverage = {}
-                for i, (fasta, genome_size, gtdb_taxonomy, coverage) in enumerate(zip(g2['fasta'], g2['genome_size'],g2['gtdb_taxonomy'], coverages['coverage'])):
-                    if gtdb_taxonomy not in tax_to_coverage:
-                        tax_to_coverage[gtdb_taxonomy] = 0
-                    tax_to_coverage[gtdb_taxonomy] += coverage
-
-                    sim_commands.append(
-                        f"{args.art} -ss HSXt -i {fasta} -p -l {read_length} -f {coverage} -m 400 -s 10 -o simulated_reads/{i}. &>/dev/null"
-                    )
-                    # sim_commands.append(
-                    #     f"{args.art} -ss HSXt -i {fasta} -p -l {read_length} -f {coverage} -m 400 -s 10 -o simulated_reads/{i}. &>/tmp/benlog{i}"
-                    # )
-
-                    genome_wise_f.write(f"{g2['accession'][i]}\t{coverage}\t{fasta}\t{gtdb_taxonomy}\n")
-
-                for tax, cov in tax_to_coverage.items():
-                    f.write(f"{os.path.basename(args.coverage_file)}\t{cov}\t{tax}\n")
-                
-        logging.info(f"Simulating {len(sim_commands)} genomes ..")
-        extern.run_many(sim_commands, num_threads=args.threads, progress_stream=sys.stderr)
-
-        logging.info("Concatenating simulated reads and compressing ..")
-        extern.run("cat simulated_reads/*1.fq |sed 's=/= =' |pigz -p {} >{}".format(args.threads, output1))
-        extern.run("cat simulated_reads/*2.fq |sed 's=/= =' |pigz -p {} >{}".format(args.threads, output2))
-    
