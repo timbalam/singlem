@@ -147,8 +147,14 @@ class Condenser:
         if em_tim:
             logging.info("Converting DIAMOND IDs to taxons")
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
-            sample_otus = self._apply_tim_expectation_maximization(sample_otus, target_domains, taxon_marker_counts, avg_num_genes_per_species)
-            logging.debug("Total OTU coverage: {}".format(sum([o.coverage for o in sample_otus])))
+            condensed_otus = self._apply_tim_expectation_maximization(sample_otus, target_domains, taxon_marker_counts, avg_num_genes_per_species)
+            logging.debug("Total OTU coverage: {}".format(sum([o.coverage for o in condensed_otus])))
+
+            if output_after_em_otu_table:
+                condensed_otus.alignment_hmm_sha256s = 'na'
+                condensed_otus.singlem_package_sha256s = 'na'
+                with open(output_after_em_otu_table, 'w') as f:
+                    condensed_otus.write_to(f)
 
         else:
             if apply_query_expectation_maximisation:
@@ -164,19 +170,19 @@ class Condenser:
                 sample_otus = self._apply_genus_expectation_maximization(sample_otus, target_domains, avg_num_genes_per_species)
                 logging.debug("Total OTU coverage: {}".format(sum([o.coverage for o in sample_otus])))
 
-        if output_after_em_otu_table:
-            sample_otus.alignment_hmm_sha256s = 'na'
-            sample_otus.singlem_package_sha256s = 'na'
-            with open(output_after_em_otu_table, 'w') as f:
-                sample_otus.write_to(f)
+            if output_after_em_otu_table:
+                sample_otus.alignment_hmm_sha256s = 'na'
+                sample_otus.singlem_package_sha256s = 'na'
+                with open(output_after_em_otu_table, 'w') as f:
+                    sample_otus.write_to(f)
 
-        # Condense via trimmed mean from domain to species
-        condensed_otus = self._condense_domain_to_species(sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage, avg_num_genes_per_species, taxon_marker_counts)
-        logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
+            # Condense via trimmed mean from domain to species
+            condensed_otus = self._condense_domain_to_species(sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage, avg_num_genes_per_species, taxon_marker_counts)
+            logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
 
-        # Attribute genus-level down to species level to account for sequencing error
-        self._push_down_genus_to_species(condensed_otus, 0.1)
-        logging.info("Total profile coverage after push down: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
+            # Attribute genus-level down to species level to account for sequencing error
+            self._push_down_genus_to_species(condensed_otus, 0.1)
+            logging.info("Total profile coverage after push down: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
 
         self._report_taxonomic_level_assignment_stats(condensed_otus)
 
@@ -683,7 +689,7 @@ class Condenser:
                     taxon_to_gene_to_coverage_part[tax][otu.marker] = taxon_to_gene_to_coverage_part[tax][otu.marker] + coverage_part / total_coverage * otu.coverage
                     
             next_otu_to_taxon_to_coverage_part = []
-            next_coverage = {}
+            max_coverage_part_change = 0
             for i, otu in enumerate(sample_otus):
                 this_taxon_to_coverage_part = otu_to_taxon_to_coverage_part[i]
                 total_coverage = sum(this_taxon_to_coverage_part.values())
@@ -697,24 +703,26 @@ class Condenser:
                     logging.debug("Using {} markers for OTU taxonomy {}, with coverages {}".format(num_markers, tax, taxon_to_gene_to_coverage_part[tax][otu.marker].values()))
                     total_gene_coverage = sum(taxon_to_gene_to_coverage_part[tax].values())
                     next_taxon_to_coverage_part[tax] = total_gene_coverage * coverage_part * otu.coverage / (num_markers * taxon_to_gene_to_coverage_part[tax][otu.marker] * total_coverage)
-                    if tax not in next_coverage:
-                        next_coverage[tax] = next_taxon_to_coverage_part[tax]
-                    else:
-                        next_coverage[tax] = next_coverage[tax] + next_taxon_to_coverage_part[tax]
+
+                    max_coverage_change = max(max_coverage_change, abs(next_taxon_to_coverage_part[tax] - coverage_part))
+
 
                 next_otu_to_taxon_to_coverage_part.append(next_taxon_to_coverage_part)
 
-            need_another_iteration = False
-            for tax, next_coverage in next_taxon_to_coverage.items():
-                if abs(next_coverage - taxon_to_coverage[tax]) > 0.001:
-                    need_another_iteration = True
-                    break
-
-            taxon_to_coverage = next_taxon_to_coverage
             otu_to_taxon_to_coverage_part = next_otu_to_taxon_to_coverage_part
+
+            need_another_iteration = max_coverage_change > 0.001
             if not need_another_iteration:
                 break
         
+        taxon_to_coverage = {}
+        for taxon_coverage_part in otu_to_taxon_to_coverage_part:
+            for tax, coverage_part in taxon_to_coverage_part.items():
+                if tax not in taxon_to_coverage:
+                    taxon_to_coverage[tax] = coverage_part
+                else:
+                    taxon_to_coverage[tax] = taxon_to_coverage[tax] + coverage_part
+
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
         rounded_taxon_to_coverage = {}
