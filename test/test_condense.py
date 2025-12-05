@@ -45,7 +45,7 @@ class Tests(unittest.TestCase):
         otus.data = [
             ['g1', 'sample1', 'seq1', 1, 1.05,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage, best_hit_taxonomy_sets = Condenser()._apply_species_expectation_maximization_core(otus, 0, {'Bacteria': ['g1']}, min_genes_for_whitelist=0, proximity_cutoff=0)
+        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
             {'Root; d__Bacteria; p;c;o;f;g; tax1': 1.05},
             species_to_coverage
@@ -58,7 +58,7 @@ class Tests(unittest.TestCase):
             ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
             ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage, best_hit_taxonomy_sets = Condenser()._apply_species_expectation_maximization_core(otus, 1, {'Bacteria': ['g1']}, min_genes_for_whitelist=0, proximity_cutoff=0)
+        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
             {'Root; d__Bacteria; p;c;o;f;g; tax1': 2.2},
             species_to_coverage
@@ -71,22 +71,22 @@ class Tests(unittest.TestCase):
             ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD],
             ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage, best_hit_taxonomy_sets = Condenser()._apply_species_expectation_maximization_core(otus, 0, {'Bacteria': ['g1']}, min_genes_for_whitelist=0, proximity_cutoff=0)
+        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
             {'Root; d__Bacteria; p;c;o;f;g; tax1': 2.2},
             species_to_coverage
         )
 
-    def test_apply_expectation_maximization_core_split3(self):
+    def test_apply_expectation_maximization_core_genus(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2','Root; d__Bacteria; p;c;o;f;g; tax3'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;genus1'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;genus1','Root; d__Bacteria; p;c;o;f;genus2; tax1'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage, best_hit_taxonomy_sets = Condenser()._apply_species_expectation_maximization_core(otus, 0, {'Bacteria': ['g1']}, min_genes_for_whitelist=0, proximity_cutoff=0)
+        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
-            {'Root; d__Bacteria; p;c;o;f;g; tax1': 1.1, 'Root; d__Bacteria; p;c;o;f;g; tax2': 1.1},
+            {'Root; d__Bacteria; p;c;o;f;genus1': 2.2},
             species_to_coverage
         )
 

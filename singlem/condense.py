@@ -10,6 +10,8 @@ from .archive_otu_table import ArchiveOtuTable, ArchiveOtuTableEntry
 from .metapackage import Metapackage
 from .taxonomy import *
 
+import pdb
+
 DEFAULT_TRIM_PERCENT = 10
 DEFAULT_MIN_TAXON_COVERAGE = 0.35
 DEFAULT_GENOME_MIN_TAXON_COVERAGE = 0.1
@@ -559,7 +561,7 @@ class Condenser:
         return rounded_genus_to_coverage, \
             list([self._key_to_species_list(k) for k in best_hit_taxonomy_sets])
 
-    def _apply_tim_expectation_maximization(self, sample_otus, genes_per_domain, taxon_marker_counts, avg_num_genes_per_species=None):
+    def _apply_tim_expectation_maximization(self, sample_otus, **kwargs):
         logging.info("Applying taxon-wise expectation maximization algorithm to OTU table")
 
         logging.debug("Total coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
@@ -568,7 +570,7 @@ class Condenser:
         logging.info("Demultiplexing OTU best hits")
         demux_otus = self._demultiplex_best_hits(sample_otus)
 
-        taxon_to_coverage = self._apply_tim_expectation_maximization_core(sample_otus, genes_per_domain, taxon_marker_counts, avg_num_genes_per_species)
+        taxon_to_coverage = self._apply_tim_expectation_maximization_core(sample_otus, **kwargs)
 
         if species_to_coverage is None:
             return sample_otus
@@ -650,7 +652,7 @@ class Condenser:
                 new_otu_table.add([new_otu])
         return new_otu_table
 
-    def _apply_tim_expectation_maximization_core(self, sample_otus, genes_per_domain, taxon_marker_counts=None, avg_num_genes_per_species=None):
+    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain=None, taxon_marker_counts=None, avg_num_genes_per_species=None):
         # Set up initial conditions. The coverage of each species is set to 1
         otu_to_taxon_to_coverage_part = []
         for otu in sample_otus:
@@ -673,6 +675,7 @@ class Condenser:
         # The fraction of each undecided OTU is the ratio of that class's
         # coverage (coverage in the current iteration) to the total coverage of
         # all best hits of the undecided OTU
+        pdb.set_trace()
         while True: # while not converged
             taxon_to_gene_to_coverage_part = {}
             num_steps += 1
@@ -700,18 +703,17 @@ class Condenser:
                         num_markers = taxon_marker_counts[tax.replace('; ',';')]
                     else:
                         num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
-                    logging.debug("Using {} markers for OTU taxonomy {}, with coverages {}".format(num_markers, tax, taxon_to_gene_to_coverage_part[tax][otu.marker].values()))
                     total_gene_coverage = sum(taxon_to_gene_to_coverage_part[tax].values())
-                    next_taxon_to_coverage_part[tax] = total_gene_coverage * coverage_part * otu.coverage / (num_markers * taxon_to_gene_to_coverage_part[tax][otu.marker] * total_coverage)
+                    next_taxon_to_coverage_part[tax] = coverage_part * (total_gene_coverage / num_markers) * (otu.coverage / total_coverage) / taxon_to_gene_to_coverage_part[tax][otu.marker]
 
-                    max_coverage_change = max(max_coverage_change, abs(next_taxon_to_coverage_part[tax] - coverage_part))
+                    max_coverage_part_change = max(max_coverage_part_change, abs(next_taxon_to_coverage_part[tax] - coverage_part))
 
 
                 next_otu_to_taxon_to_coverage_part.append(next_taxon_to_coverage_part)
 
             otu_to_taxon_to_coverage_part = next_otu_to_taxon_to_coverage_part
 
-            need_another_iteration = max_coverage_change > 0.001
+            need_another_iteration = max_coverage_part_change > 0.001
             if not need_another_iteration:
                 break
         
@@ -733,7 +735,7 @@ class Condenser:
 
         logging.info("All taxon EM converged in {} steps".format(num_steps))
 
-        return rounded_taxon_to_coverage
+        return taxon_to_coverage
 
     def _apply_species_expectation_maximization(self, sample_otus, trim_percent, genes_per_domain, taxon_marker_counts):
         logging.info("Applying species-wise expectation maximization algorithm to OTU table")
