@@ -95,8 +95,8 @@ class Tests(unittest.TestCase):
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2','Root; d__Bacteria; p;c;o;f;g; tax3'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq1', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax5','Root; d__Bacteria; p;c;o;f;g; tax4'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2','Root; d__Bacteria; p;c;o;f;g; tax3'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax5','Root; d__Bacteria; p;c;o;f;g; tax4'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
         species_to_coverage, best_hit_taxonomy_sets = Condenser()._apply_species_expectation_maximization_core(otus, 0, {'Bacteria': ['g1']}, min_genes_for_whitelist=0, proximity_cutoff=0)
         self.assertEqual(
@@ -108,6 +108,109 @@ class Tests(unittest.TestCase):
             ['Root; d__Bacteria; p;c;o;f;g; tax1', 'Root; d__Bacteria; p;c;o;f;g; tax2', 'Root; d__Bacteria; p;c;o;f;g; tax3'],
             ['Root; d__Bacteria; p;c;o;f;g; tax5', 'Root; d__Bacteria; p;c;o;f;g; tax4']
         ]), sorted(best_hit_taxonomy_sets))
+
+    def test_gather_equivalence_classes_from_list_of_taxon_lists1(self):
+        species_lists = [['tax1'], ['tax2']]
+        expected = {
+            'tax1': {'tax1'},
+            'tax2': {'tax2'}
+        }
+        self.assertEqual(
+            expected,
+            Condenser()._gather_equivalence_classes_from_list_of_taxon_lists(species_lists)
+        )
+
+    def test_gather_equivalence_classes_from_list_of_taxon_lists2(self):
+        species_lists = [['tax1'], ['tax2'],['tax1','tax2']]
+        expected = {
+            'tax1': {'tax1'},
+            'tax2': {'tax2'}
+        }
+        self.assertEqual(
+            expected,
+            Condenser()._gather_equivalence_classes_from_list_of_taxon_lists(species_lists)
+        )
+
+    def test_gather_equivalence_classes_from_list_of_taxon_lists3(self):
+        species_lists = [['tax1','tax2'],['tax1'], ['tax2']]
+        expected = {
+            'tax1': {'tax1'},
+            'tax2': {'tax2'}
+        }
+        self.assertEqual(
+            expected,
+            Condenser()._gather_equivalence_classes_from_list_of_taxon_lists(species_lists)
+        )
+
+    def test_gather_equivalence_classes_from_list_of_taxon_lists4(self):
+        species_lists = [['tax1','tax2'],['tax1','tax2','tax3']]
+        expected = {'tax1': {'tax1', 'tax2'}, 'tax2': {'tax1', 'tax2'}, 'tax3': {'tax3'}}
+        self.assertEqual(
+            expected,
+            Condenser()._gather_equivalence_classes_from_list_of_taxon_lists(species_lists)
+        )
+
+    def test_demultiplex_best_hits1(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
+        ]
+        expected = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'tax1','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
+        ]
+        self.assertEqual(
+            expected,
+            Condenser()._demultiplex_best_hits(otus).data
+        )
+
+    def test_demultiplex_best_hits2(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Rooter; tax1','Rooter; tax2'], QUERY_BASED_ASSIGNMENT_METHOD],
+        ]
+        expected = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'Rooter','','','','',['Rooter','Rooter'], QUERY_BASED_ASSIGNMENT_METHOD],
+        ]
+        self.assertEqual(
+            expected,
+            Condenser()._demultiplex_best_hits(otus).data
+        )
+
+    def test_demultiplex_best_hits_1gene1(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD]
+        ]
+        expected = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'], QUERY_BASED_ASSIGNMENT_METHOD],
+        ]
+        self.assertEqual(
+            expected,
+            Condenser()._demultiplex_best_hits(otus).data
+        )
+
+    def test_demultiplex_best_hits_1gene2(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2','Root; d__Bacteria; p;c;o;f;g; tax3'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax5','Root; d__Bacteria; p;c;o;f;g; tax4'],QUERY_BASED_ASSIGNMENT_METHOD]
+        ]
+        expected = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD]
+        ]
+        self.assertEqual(
+            expected,
+            Condenser()._demultiplex_best_hits(otus).data
+        )
 
 if __name__ == "__main__":
     import logging

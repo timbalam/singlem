@@ -581,15 +581,22 @@ class Condenser:
         return core_return
 
     def _demultiplex_best_hits(self, sample_otus):
-        best_hit_taxonomy_sets = set()
+        marker_to_best_hit_taxonomy_sets = {}
         for otu in sample_otus:
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
             if best_hit_taxonomies is not None and (
                     otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
-                best_hit_taxonomy_sets.add(self._species_list_to_key(best_hit_taxonomies))
-        best_hits_taxonomies = list([self._key_to_species_list(k) for k in best_hit_taxonomy_sets])
+                if otu.marker not in marker_to_best_hit_taxonomy_sets:
+                    marker_to_best_hit_taxonomy_sets[otu.marker] = set(best_hit_taxonomies)
+                else:
+                    marker_to_best_hit_taxonomy_sets[otu.marker] &= set(best_hit_taxonomies)
+
+        best_hit_taxonomy_sets = set()
+        for best_hit_taxonomies in marker_to_best_hit_taxonomy_sets.values():
+            best_hit_taxonomy_sets.add(self._species_list_to_key(best_hit_taxonomies))
+        best_hits_taxonomies = [self._key_to_species_list(k) for k in best_hit_taxonomy_sets]
 
         logging.info("Gathering equivalence classes")
         eq_classes = self._gather_equivalence_classes_from_list_of_taxon_lists(best_hit_taxonomies) 
@@ -604,9 +611,10 @@ class Condenser:
         new_otu_table = ArchiveOtuTable()
         new_otu_table.fields = sample_otus.fields
         for otu in sample_otus:
-            if otu.taxonomy_assignment_method() != assignment_method:
-                new_otu_table.add([otu])
-            else:
+            if (
+                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
+                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
+                    ):
                 demux_best_hits = set()
                 for tax in otu.equal_best_hit_taxonomies():
                     if tax in species_to_equivalence_class_lca:
@@ -616,6 +624,8 @@ class Condenser:
                         demux_best_hits.add(tax)
 
                 otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = list(demux_best_hits)
+                new_otu_table.add([otu])
+            else:
                 new_otu_table.add([otu])
         return new_otu_table
 
@@ -766,7 +776,7 @@ class Condenser:
         return demux_otus
 
     def _species_list_to_key(self, species_list):
-        return '~'.join(species_list)
+        return '~'.join(set(species_list))
     def _key_to_species_list(self, key):
         return key.split('~')
 
