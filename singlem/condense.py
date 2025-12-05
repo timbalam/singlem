@@ -654,77 +654,77 @@ class Condenser:
 
     def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain=None, taxon_marker_counts=None, avg_num_genes_per_species=None):
         # Set up initial conditions. The coverage of each species is set to 1
-        otu_to_taxon_to_coverage_part = []
+        taxon_to_coverage = {}
+        otu_to_taxon_to_prop = []
         for otu in sample_otus:
-            taxon_to_coverage_part = {}
+            taxon_to_prop = {}
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
             if best_hit_taxonomies is not None and (
                     otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
                 for best_hit_tax in best_hit_taxonomies:
-                    if best_hit_tax not in taxon_to_coverage_part:
-                        taxon_to_coverage_part[best_hit_tax] = 1
+                    if best_hit_tax not in taxon_to_prop:
+                        taxon_to_prop[best_hit_tax] = 1
+                    if best_hit_tax not in taxon_to_coverage:
+                        taxon_to_coverage[best_hit_tax] = 1
 
-            otu_to_taxon_to_coverage_part.append(taxon_to_coverage_part)
+            otu_to_taxon_to_prop.append(taxon_to_prop)
 
-        if len(otu_to_taxon_to_coverage_part) == 0: return None
+        if len(taxon_to_coverage) == 0: return None
 
         num_steps = 0
-        min_num_steps = 50
         # The fraction of each undecided OTU is the ratio of that class's
         # coverage (coverage in the current iteration) to the total coverage of
         # all best hits of the undecided OTU
-        pdb.set_trace()
         while True: # while not converged
-            taxon_to_gene_to_coverage_part = {}
+            taxon_to_gene_to_prop = {}
             num_steps += 1
             for i, otu in enumerate(sample_otus):
-                this_taxon_to_coverage_part = otu_to_taxon_to_coverage_part[i]
-                total_coverage = sum(this_taxon_to_coverage_part.values())
+                taxon_to_prop = otu_to_taxon_to_prop[i]
+                total_coverage = sum(prop * taxon_to_coverage[tax] for tax, prop in taxon_to_prop.items())
 
-                for tax, coverage_part in this_taxon_to_coverage_part.items():
+                for tax, prop in taxon_to_prop.items():
                     # Record the total for each gene so a trimmed mean can be taken afterwards
-                    if tax not in taxon_to_gene_to_coverage_part:
-                        taxon_to_gene_to_coverage_part[tax] = {}
-                    if otu.marker not in taxon_to_gene_to_coverage_part[tax]:
-                        taxon_to_gene_to_coverage_part[tax][otu.marker] = 0
-                    taxon_to_gene_to_coverage_part[tax][otu.marker] = taxon_to_gene_to_coverage_part[tax][otu.marker] + coverage_part / total_coverage * otu.coverage
+                    if tax not in taxon_to_gene_to_prop:
+                        taxon_to_gene_to_prop[tax] = {}
+                    if otu.marker not in taxon_to_gene_to_prop[tax]:
+                        taxon_to_gene_to_prop[tax][otu.marker] = 0
+                    taxon_to_gene_to_prop[tax][otu.marker] = taxon_to_gene_to_prop[tax][otu.marker] + prop / total_coverage * otu.coverage
                     
-            next_otu_to_taxon_to_coverage_part = []
-            max_coverage_part_change = 0
+            next_otu_to_taxon_to_prop = []
+            max_coef_change = 0
             for i, otu in enumerate(sample_otus):
-                this_taxon_to_coverage_part = otu_to_taxon_to_coverage_part[i]
-                total_coverage = sum(this_taxon_to_coverage_part.values())
+                taxon_to_prop = otu_to_taxon_to_prop[i]
+                total_coverage = sum(prop * taxon_to_coverage[tax] for tax, prop in taxon_to_prop.items())
 
-                next_taxon_to_coverage_part = {}
-                for tax, coverage_part in this_taxon_to_coverage_part.items():
-                    if taxon_marker_counts is not None:
-                        num_markers = taxon_marker_counts[tax.replace('; ',';')]
-                    else:
-                        num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
-                    total_gene_coverage = sum(taxon_to_gene_to_coverage_part[tax].values())
-                    next_taxon_to_coverage_part[tax] = coverage_part * (total_gene_coverage / num_markers) * (otu.coverage / total_coverage) / taxon_to_gene_to_coverage_part[tax][otu.marker]
+                next_taxon_to_prop = {}
+                for tax, prop in taxon_to_prop.items():
+                    next_taxon_to_prop[tax] = prop * (otu.coverage / total_coverage) / taxon_to_gene_to_prop[tax][otu.marker]
 
-                    max_coverage_part_change = max(max_coverage_part_change, abs(next_taxon_to_coverage_part[tax] - coverage_part))
+                    max_coef_change = max(max_coef_change, abs(next_taxon_to_prop[tax] - prop))
 
 
-                next_otu_to_taxon_to_coverage_part.append(next_taxon_to_coverage_part)
+                next_otu_to_taxon_to_prop.append(next_taxon_to_prop)
 
-            otu_to_taxon_to_coverage_part = next_otu_to_taxon_to_coverage_part
+            next_taxon_to_coverage = {}
+            for tax, coverage in taxon_to_coverage.items():
+                if taxon_marker_counts is not None:
+                    num_markers = taxon_marker_counts[tax.replace('; ',';')]
+                else:
+                    num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
+                total_gene_prop = sum(taxon_to_gene_to_prop[tax].values())
+                next_taxon_to_coverage[tax] = coverage * total_gene_prop / num_markers
 
-            need_another_iteration = max_coverage_part_change > 0.001
+                max_coef_change = max(max_coef_change, abs(next_taxon_to_coverage[tax] - coverage))
+
+            otu_to_taxon_to_prop = next_otu_to_taxon_to_prop
+            taxon_to_coverage = next_taxon_to_coverage
+
+            need_another_iteration = max_coef_change > 0.001
             if not need_another_iteration:
                 break
         
-        taxon_to_coverage = {}
-        for taxon_coverage_part in otu_to_taxon_to_coverage_part:
-            for tax, coverage_part in taxon_to_coverage_part.items():
-                if tax not in taxon_to_coverage:
-                    taxon_to_coverage[tax] = coverage_part
-                else:
-                    taxon_to_coverage[tax] = taxon_to_coverage[tax] + coverage_part
-
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
         rounded_taxon_to_coverage = {}
