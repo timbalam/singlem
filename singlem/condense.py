@@ -591,15 +591,15 @@ class Condenser:
                 if otu.marker not in marker_to_best_hit_taxonomy_sets:
                     marker_to_best_hit_taxonomy_sets[otu.marker] = set(best_hit_taxonomies)
                 else:
-                    marker_to_best_hit_taxonomy_sets[otu.marker] &= set(best_hit_taxonomies)
+                    marker_to_best_hit_taxonomy_sets[otu.marker] |= set(best_hit_taxonomies)
 
         best_hit_taxonomy_sets = set()
         for best_hit_taxonomies in marker_to_best_hit_taxonomy_sets.values():
-            best_hit_taxonomy_sets.add(self._species_list_to_key(best_hit_taxonomies))
+            best_hit_taxonomy_sets.add(self._species_list_to_key(sorted(set(best_hit_taxonomies))))
         best_hits_taxonomies = [self._key_to_species_list(k) for k in best_hit_taxonomy_sets]
 
         logging.info("Gathering equivalence classes")
-        eq_classes = self._gather_equivalence_classes_from_list_of_taxon_lists(best_hit_taxonomies) 
+        eq_classes = self._gather_equivalence_classes_from_list_of_taxon_lists(best_hits_taxonomies) 
 
         # Convert eq_classes into a dict of species to LCA
         species_to_equivalence_class_lca = {}
@@ -623,7 +623,7 @@ class Condenser:
                     else:
                         demux_best_hits.add(tax)
 
-                otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = list(demux_best_hits)
+                otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = sorted(demux_best_hits)
                 new_otu_table.add([otu])
             else:
                 new_otu_table.add([otu])
@@ -776,7 +776,7 @@ class Condenser:
         return demux_otus
 
     def _species_list_to_key(self, species_list):
-        return '~'.join(set(species_list))
+        return '~'.join(species_list)
     def _key_to_species_list(self, key):
         return key.split('~')
 

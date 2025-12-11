@@ -157,7 +157,7 @@ class Tests(unittest.TestCase):
             ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'tax1','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
         ]
         self.assertEqual(
             expected,
@@ -171,7 +171,7 @@ class Tests(unittest.TestCase):
             ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Rooter; tax1','Rooter; tax2'], QUERY_BASED_ASSIGNMENT_METHOD],
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'Rooter','','','','',['Rooter','Rooter'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Rooter'], QUERY_BASED_ASSIGNMENT_METHOD],
         ]
         self.assertEqual(
             expected,
@@ -186,8 +186,8 @@ class Tests(unittest.TestCase):
             ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'], QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'], QUERY_BASED_ASSIGNMENT_METHOD],
         ]
         self.assertEqual(
             expected,
@@ -203,9 +203,9 @@ class Tests(unittest.TestCase):
             ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax5','Root; d__Bacteria; p;c;o;f;g; tax4'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
         self.assertEqual(
             expected,
