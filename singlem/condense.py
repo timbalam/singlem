@@ -569,8 +569,9 @@ class Condenser:
 
         logging.info("Demultiplexing OTU best hits")
         demux_otus = self._demultiplex_best_hits(sample_otus)
+        demux_otus = self._add_ancestor_best_hits(demux_otus)
 
-        taxon_to_coverage = self._apply_tim_expectation_maximization_core(sample_otus, **kwargs)
+        taxon_to_coverage = self._apply_tim_expectation_maximization_core(demux_otus, **kwargs)
 
         if species_to_coverage is None:
             return sample_otus
@@ -589,23 +590,22 @@ class Condenser:
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
                 if otu.marker not in marker_to_best_hit_taxonomy_sets:
-                    marker_to_best_hit_taxonomy_sets[otu.marker] = set(best_hit_taxonomies)
-                else:
-                    marker_to_best_hit_taxonomy_sets[otu.marker] |= set(best_hit_taxonomies)
+                    marker_to_best_hit_taxonomy_sets[otu.marker] = {}
+                for tax in best_hit_taxonomies:
+                    if tax not in marker_to_best_hit_taxonomy_sets[otu.marker]:
+                        marker_to_best_hit_taxonomy_sets[otu.marker][tax] = set(best_hit_taxonomies)
+                    else:
+                        marker_to_best_hit_taxonomy_sets[otu.marker][tax] |= set(best_hit_taxonomies)
 
-        best_hit_taxonomy_sets = set()
-        for best_hit_taxonomies in marker_to_best_hit_taxonomy_sets.values():
-            best_hit_taxonomy_sets.add(self._species_list_to_key(sorted(set(best_hit_taxonomies))))
-        best_hits_taxonomies = [self._key_to_species_list(k) for k in best_hit_taxonomy_sets]
+        all_best_hit_taxonomy_sets = set()
+        for best_hit_taxonomy_sets in marker_to_best_hit_taxonomy_sets.values():
+            for best_hit_taxonomy_set in best_hit_taxonomy_sets.values():
+                all_best_hit_taxonomy_sets.add(self._species_list_to_key(sorted(best_hit_taxonomy_set)))
+        all_best_hit_taxonomies = [self._key_to_species_list(k) for k in all_best_hit_taxonomy_sets]
 
         logging.info("Gathering equivalence classes")
-        eq_classes = self._gather_equivalence_classes_from_list_of_taxon_lists(best_hits_taxonomies) 
+        species_to_eq_class = self._gather_equivalence_classes_from_list_of_taxon_lists(all_best_hit_taxonomies) 
 
-        # Convert eq_classes into a dict of species to LCA
-        species_to_equivalence_class_lca = {}
-        for sp, eq_class in eq_classes.items():
-            species_to_equivalence_class_lca[sp] = TaxonomyUtils.lca_taxonomy_of_strings(eq_class)
-        # logging.debug("Species to LCA: {}".format(species_to_equivalence_class_lca))
 
         # Generate new OTU table. Has to be an Archive because this method is run pre-EM.
         new_otu_table = ArchiveOtuTable()
@@ -616,14 +616,47 @@ class Condenser:
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
                 demux_best_hits = set()
-                for tax in otu.equal_best_hit_taxonomies():
-                    if tax in species_to_equivalence_class_lca:
-                        lca = species_to_equivalence_class_lca[tax]
+                best_hit_taxonomies = otu.equal_best_hit_taxonomies()
+                for tax in best_hit_taxonomies:
+                    if tax in species_to_eq_class:
+                        # Convert eq_classes to LCA
+                        eq_class = species_to_eq_class[tax] & set(best_hit_taxonomies)
+                        lca = TaxonomyUtils.lca_taxonomy_of_strings(eq_class)
                         demux_best_hits.add(lca)
                     else:
                         demux_best_hits.add(tax)
 
                 otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = sorted(demux_best_hits)
+                new_otu_table.add([otu])
+            else:
+                new_otu_table.add([otu])
+        return new_otu_table
+
+    def _add_ancestor_best_hits(self, sample_otus):
+        all_best_hit_taxonomies = set()
+        for out in sample_otus:
+            if (
+                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
+                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
+                    ):
+                for tax in otu.equal_best_hit_taxonomies():
+                    all_best_hit_taxonomies.add(TaxonomyUtils.clean_taxonomy_string(tax))
+
+        # Generate new OTU table. Has to be an Archive because this method is run pre-EM.
+        new_otu_table = ArchiveOtuTable()
+        new_otu_table.fields = sample_otus.fields
+        for otu in sample_otus:
+            if (
+                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
+                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
+                    ):
+                ancestor_best_hits = set()
+                for tax in otu.equal_best_hit_taxonomies():
+                    for anc in TaxonomyUtils.ancestor_taxonomies(tax):
+                        if anc in all_best_hit_taxonomies:
+                            ancestor_best_hits.add(anc)
+
+                otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = sorted(ancestor_best_hits)
                 new_otu_table.add([otu])
             else:
                 new_otu_table.add([otu])

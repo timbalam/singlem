@@ -37,3 +37,15 @@ class TaxonomyUtils:
                     lca = lca[:i]
                     break
         return '; '.join(lca)
+
+    @staticmethod
+    def clean_taxonomy_string(taxonomy_string):
+        tax = [t.strip() for t in taxonomy_string.split(';')]
+        return '; '.join(tax)
+
+    @staticmethod
+    def ancestor_taxonomies(taxonomy_string):
+        tax = [t.strip() for t in taxonomy_string.split(';') if ta.strip() != '']
+        while len(tax) > 0:
+            yield '; '.join(tax)
+            tax = tax[:-1]
