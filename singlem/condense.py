@@ -663,17 +663,40 @@ class Condenser:
                 new_otu_table.add([new_otu])
         return new_otu_table
 
-    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain=None, taxon_marker_counts=None, avg_num_genes_per_species=None):
-        # Set up initial conditions. The coverage of each species is set to 1
-        all_best_hit_taxonomies = set()
+    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain):
+        taxon_to_genes = {}
         for otu in sample_otus:
             if (
                     otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
                 for best_hit_tax in otu.equal_best_hit_taxonomies():
-                    all_best_hit_taxonomies.add(TaxonomyUtils.clean_taxonomy_string(best_hit_tax))
+                    clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
+                    if clean_tax not in taxon_to_genes:
+                        taxon_to_genes[clean_tax] = set(genes_per_domain[clean_tax.split(';')[1].strip().replace('d__','')])
+                    taxon_to_genes[clean_tax].discard(otu.marker)
+        
+        taxon_to_gene_to_descendent = {}
+        for tax, genes in taxon_to_genes.items():
+            if tax not in taxon_to_gene_to_descendent:
+                taxon_to_gene_to_descendent[tax] = {}
+            rem_genes = genes
+            for anc in TaxonomyUtils.ancestor_taxonomies(tax):
+                if len(rem_genes) == 0:
+                    break
+                if anc in taxon_to_genes:
+                    if anc not in taxon_to_gene_to_descendent:
+                        taxon_to_gene_to_descendent[anc] = {}
+                    for anc_gene in rem_genes - taxon_to_genes[anc]:
+                        if anc_gene not in taxon_to_gene_to_descendent[anc]:
+                            taxon_to_gene_to_descendent[anc][anc_gene] = set(tax)
+                        else:
+                            taxon_to_gene_to_descendent[anc][anc_gene].add(tax)
+                    
+                    rem_genes &= taxon_to_genes[anc]
 
+
+        # Set up initial conditions. The coverage of each species is set to 1
         taxon_to_coverage = {}
         otu_to_taxon_to_prop = []
         for otu in sample_otus:
@@ -683,13 +706,19 @@ class Condenser:
                     otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
+                best_hit_descendents = set()
                 for best_hit_tax in best_hit_taxonomies:
-                    for best_hit_anc in TaxonomyUtils.ancestor_taxonomies(best_hit_tax):
-                        if best_hit_anc in all_best_hit_taxonomies:
-                            if best_hit_anc not in taxon_to_prop:
-                                taxon_to_prop[best_hit_anc] = 1
-                            if best_hit_anc not in taxon_to_coverage:
-                                taxon_to_coverage[best_hit_anc] = 1
+                    clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
+                    best_hit_descendents.add(clean_tax)
+                    if clean_tax in taxon_to_gene_to_descendent:
+                        if otu.marker in taxon_to_gene_to_descendent[clean_tax]:
+                            best_hit_descendents.update(taxon_to_gene_to_descendent[clean_tax][otu.marker])
+                
+                for best_hit_desc in best_hit_descendents:
+                    if best_hit_desc not in taxon_to_prop:
+                        taxon_to_prop[best_hit_desc] = 1
+                    if best_hit_desc not in taxon_to_coverage:
+                        taxon_to_coverage[best_hit_desc] = 1
 
             otu_to_taxon_to_prop.append(taxon_to_prop)
 
@@ -731,10 +760,7 @@ class Condenser:
 
             next_taxon_to_coverage = {}
             for tax, coverage in taxon_to_coverage.items():
-                if taxon_marker_counts is not None:
-                    num_markers = taxon_marker_counts[tax.replace("; ", ";")]
-                else:
-                    num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
+                num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
                 total_gene_prop = sum(taxon_to_gene_to_prop[tax].values())
                 next_taxon_to_coverage[tax] = coverage * total_gene_prop / num_markers
 
@@ -757,7 +783,7 @@ class Condenser:
 
         logging.info("All taxon EM converged in {} steps".format(num_steps))
 
-        return taxon_to_coverage
+        return rounded_taxon_to_coverage
 
     def _apply_species_expectation_maximization(self, sample_otus, trim_percent, genes_per_domain, taxon_marker_counts):
         logging.info("Applying species-wise expectation maximization algorithm to OTU table")
