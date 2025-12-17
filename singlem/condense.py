@@ -569,7 +569,6 @@ class Condenser:
 
         logging.info("Demultiplexing OTU best hits")
         demux_otus = self._demultiplex_best_hits(sample_otus)
-        demux_otus = self._add_ancestor_best_hits(demux_otus)
 
         taxon_to_coverage = self._apply_tim_expectation_maximization_core(demux_otus, **kwargs)
 
@@ -591,11 +590,11 @@ class Condenser:
                     ):
                 if otu.marker not in marker_to_best_hit_taxonomy_sets:
                     marker_to_best_hit_taxonomy_sets[otu.marker] = {}
-                for tax in best_hit_taxonomies:
-                    if tax not in marker_to_best_hit_taxonomy_sets[otu.marker]:
-                        marker_to_best_hit_taxonomy_sets[otu.marker][tax] = set(best_hit_taxonomies)
+                for best_hit_tax in best_hit_taxonomies:
+                    if best_hit_tax not in marker_to_best_hit_taxonomy_sets[otu.marker]:
+                        marker_to_best_hit_taxonomy_sets[otu.marker][best_hit_tax] = set(best_hit_taxonomies)
                     else:
-                        marker_to_best_hit_taxonomy_sets[otu.marker][tax] |= set(best_hit_taxonomies)
+                        marker_to_best_hit_taxonomy_sets[otu.marker][best_hit_tax] |= set(best_hit_taxonomies)
 
         all_best_hit_taxonomy_sets = set()
         for best_hit_taxonomy_sets in marker_to_best_hit_taxonomy_sets.values():
@@ -605,7 +604,6 @@ class Condenser:
 
         logging.info("Gathering equivalence classes")
         species_to_eq_class = self._gather_equivalence_classes_from_list_of_taxon_lists(all_best_hit_taxonomies) 
-
 
         # Generate new OTU table. Has to be an Archive because this method is run pre-EM.
         new_otu_table = ArchiveOtuTable()
@@ -617,46 +615,16 @@ class Condenser:
                     ):
                 demux_best_hits = set()
                 best_hit_taxonomies = otu.equal_best_hit_taxonomies()
-                for tax in best_hit_taxonomies:
-                    if tax in species_to_eq_class:
+                for best_hit_tax in best_hit_taxonomies:
+                    if best_hit_tax in species_to_eq_class:
                         # Convert eq_classes to LCA
-                        eq_class = species_to_eq_class[tax] & set(best_hit_taxonomies)
+                        eq_class = species_to_eq_class[best_hit_tax] & set(best_hit_taxonomies)
                         lca = TaxonomyUtils.lca_taxonomy_of_strings(eq_class)
                         demux_best_hits.add(lca)
                     else:
-                        demux_best_hits.add(tax)
+                        raise Exception("shouldn't happen?") #demux_best_hits.add(best_hit_tax)
 
                 otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = sorted(demux_best_hits)
-                new_otu_table.add([otu])
-            else:
-                new_otu_table.add([otu])
-        return new_otu_table
-
-    def _add_ancestor_best_hits(self, sample_otus):
-        all_best_hit_taxonomies = set()
-        for out in sample_otus:
-            if (
-                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
-                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
-                    ):
-                for tax in otu.equal_best_hit_taxonomies():
-                    all_best_hit_taxonomies.add(TaxonomyUtils.clean_taxonomy_string(tax))
-
-        # Generate new OTU table. Has to be an Archive because this method is run pre-EM.
-        new_otu_table = ArchiveOtuTable()
-        new_otu_table.fields = sample_otus.fields
-        for otu in sample_otus:
-            if (
-                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
-                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
-                    ):
-                ancestor_best_hits = set()
-                for tax in otu.equal_best_hit_taxonomies():
-                    for anc in TaxonomyUtils.ancestor_taxonomies(tax):
-                        if anc in all_best_hit_taxonomies:
-                            ancestor_best_hits.add(anc)
-
-                otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = sorted(ancestor_best_hits)
                 new_otu_table.add([otu])
             else:
                 new_otu_table.add([otu])
@@ -697,6 +665,15 @@ class Condenser:
 
     def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain=None, taxon_marker_counts=None, avg_num_genes_per_species=None):
         # Set up initial conditions. The coverage of each species is set to 1
+        all_best_hit_taxonomies = set()
+        for otu in sample_otus:
+            if (
+                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
+                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
+                    ):
+                for best_hit_tax in otu.equal_best_hit_taxonomies():
+                    all_best_hit_taxonomies.add(TaxonomyUtils.clean_taxonomy_string(best_hit_tax))
+
         taxon_to_coverage = {}
         otu_to_taxon_to_prop = []
         for otu in sample_otus:
@@ -707,10 +684,12 @@ class Condenser:
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
                 for best_hit_tax in best_hit_taxonomies:
-                    if best_hit_tax not in taxon_to_prop:
-                        taxon_to_prop[best_hit_tax] = 1
-                    if best_hit_tax not in taxon_to_coverage:
-                        taxon_to_coverage[best_hit_tax] = 1
+                    for best_hit_anc in TaxonomyUtils.ancestor_taxonomies(best_hit_tax):
+                        if best_hit_anc in all_best_hit_taxonomies:
+                            if best_hit_anc not in taxon_to_prop:
+                                taxon_to_prop[best_hit_anc] = 1
+                            if best_hit_anc not in taxon_to_coverage:
+                                taxon_to_coverage[best_hit_anc] = 1
 
             otu_to_taxon_to_prop.append(taxon_to_prop)
 
@@ -753,7 +732,7 @@ class Condenser:
             next_taxon_to_coverage = {}
             for tax, coverage in taxon_to_coverage.items():
                 if taxon_marker_counts is not None:
-                    num_markers = taxon_marker_counts[tax.replace('; ',';')]
+                    num_markers = taxon_marker_counts[tax.replace("; ", ";")]
                 else:
                     num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
                 total_gene_prop = sum(taxon_to_gene_to_prop[tax].values())
@@ -1016,8 +995,8 @@ class Condenser:
                 else:
                     new_species_in_set.add(species)
             if len(new_species_in_set) > 0:
-                for sp in new_species_in_set:
-                    species_to_eq_class[sp] = new_species_in_set
+                for species in new_species_in_set:
+                    species_to_eq_class[species] = new_species_in_set
 
             if len(old_species_in_set) > 0:
                 next_set = old_species_in_set
@@ -1033,12 +1012,12 @@ class Condenser:
                     intersection = next_set & one_prev_eq_class
                     # Species in the left set form a new class, if there are any
                     if len(extras) > 0:
-                        for sp in extras:
-                            species_to_eq_class[sp] = extras
+                        for species in extras:
+                            species_to_eq_class[species] = extras
                     # Species in the intersection form a new class, if needed
                     if len(intersection) != len(one_prev_eq_class):
-                        for sp in intersection:
-                            species_to_eq_class[sp] = intersection
+                        for species in intersection:
+                            species_to_eq_class[species] = intersection
                     # Species in the right set are recorded already in one or more other classes. Iterate these classes
                     if len(old_others) > 0:
                         next_set = old_others

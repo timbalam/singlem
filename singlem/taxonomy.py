@@ -1,3 +1,5 @@
+import re
+
 PPLACER_ASSIGNMENT_METHOD = 'pplacer'
 DIAMOND_ASSIGNMENT_METHOD = 'diamond'
 DIAMOND_EXAMPLE_BEST_HIT_ASSIGNMENT_METHOD = 'diamond_example'
@@ -40,12 +42,12 @@ class TaxonomyUtils:
 
     @staticmethod
     def clean_taxonomy_string(taxonomy_string):
-        tax = [t.strip() for t in taxonomy_string.split(';')]
-        return '; '.join(tax)
+        return re.sub(" *; *", "; ",
+                      taxonomy_string.strip())
 
     @staticmethod
     def ancestor_taxonomies(taxonomy_string):
-        tax = [t.strip() for t in taxonomy_string.split(';') if ta.strip() != '']
+        tax = [t.strip() for t in taxonomy_string.split(';') if t.strip() != '']
         while len(tax) > 0:
             yield '; '.join(tax)
             tax = tax[:-1]

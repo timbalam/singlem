@@ -47,7 +47,7 @@ class Tests(unittest.TestCase):
         ]
         species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
-            {'Root; d__Bacteria; p;c;o;f;g; tax1': 1.05},
+            {'Root; d__Bacteria; p; c; o; f; g; tax1': 1.05},
             species_to_coverage
         )
 
@@ -56,11 +56,12 @@ class Tests(unittest.TestCase):
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
         species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
-            {'Root; d__Bacteria; p;c;o;f;g; tax1': 2.2},
+            {'Root; d__Bacteria; p; c; o; f; g; tax1': 1.1,
+             'Root; d__Bacteria; p; c; o; f; g': 1.1},
             species_to_coverage
         )
 
@@ -186,7 +187,7 @@ class Tests(unittest.TestCase):
             ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
             ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'], QUERY_BASED_ASSIGNMENT_METHOD],
         ]
         self.assertEqual(
@@ -206,6 +207,24 @@ class Tests(unittest.TestCase):
             ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD],
             ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD],
             ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD]
+        ]
+        self.assertEqual(
+            expected,
+            Condenser()._demultiplex_best_hits(otus).data
+        )
+        
+    def test_demultiplex_best_hits_2gene2(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1','Root; d__Bacteria; p;c;o;f;gen1; tax2'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1','Root; d__Bacteria; p;c;o;f;gen1; tax2','Root; d__Bacteria; p;c;o;f;gen2; tax3'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;gen2; tax5','Root; d__Bacteria; p;c;o;f;gen2; tax4'],QUERY_BASED_ASSIGNMENT_METHOD]
+        ]
+        expected = [
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; gen1'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p; c; o; f; gen2'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
         self.assertEqual(
             expected,
