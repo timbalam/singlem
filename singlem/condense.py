@@ -149,14 +149,8 @@ class Condenser:
         if em_tim:
             logging.info("Converting DIAMOND IDs to taxons")
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
-            condensed_otus = self._apply_tim_expectation_maximization(sample_otus, target_domains, taxon_marker_counts, avg_num_genes_per_species)
+            condensed_otus = self._apply_tim_expectation_maximization(sample, sample_otus, target_domains, taxon_marker_counts, avg_num_genes_per_species)
             logging.debug("Total OTU coverage: {}".format(sum([o.coverage for o in condensed_otus])))
-
-            if output_after_em_otu_table:
-                condensed_otus.alignment_hmm_sha256s = 'na'
-                condensed_otus.singlem_package_sha256s = 'na'
-                with open(output_after_em_otu_table, 'w') as f:
-                    condensed_otus.write_to(f)
 
         else:
             if apply_query_expectation_maximisation:
@@ -561,7 +555,7 @@ class Condenser:
         return rounded_genus_to_coverage, \
             list([self._key_to_species_list(k) for k in best_hit_taxonomy_sets])
 
-    def _apply_tim_expectation_maximization(self, sample_otus, **kwargs):
+    def _apply_tim_expectation_maximization(self, sample, sample_otus, **kwargs):
         logging.info("Applying taxon-wise expectation maximization algorithm to OTU table")
 
         logging.debug("Total coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
@@ -572,15 +566,23 @@ class Condenser:
 
         taxon_to_coverage = self._apply_tim_expectation_maximization_core(demux_otus, **kwargs)
 
-        if species_to_coverage is None:
-            return sample_otus
+        if taxon_to_coverage is None:
+            return demux_otus
 
-        condensed_otus = self._condensed_otus(sample_otus, taxon_to_coverage)
-        
         logging.info("Finished tim expectation maximization")
-        return core_return
+
+        condensed_profile = self._condense_taxon_coverage(sample, taxon_to_coverage)
+        
+        return condensed_profile
 
     def _demultiplex_best_hits(self, sample_otus):
+        ''' Return a new OTU table where the OTUs have been demultiplexed. This
+        table likely contains OTUs which have the same window sequence.
+
+        For species that cannot be differentiated according to the eq class,
+        collapse them into an LCA taxonomy.
+        '''
+
         marker_to_best_hit_taxonomy_sets = {}
         for otu in sample_otus:
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
@@ -630,38 +632,13 @@ class Condenser:
                 new_otu_table.add([otu])
         return new_otu_table
 
-    def _condense_otus(self, sample_otus, taxon_to_coverage):
-        ''' Return a new OTU table where the OTUs have been demultiplexed. This
-        table likely contains OTUs which have the same window sequence.
+    def _condense_taxon_coverage(self, sample, taxon_to_coverage):
 
-        For species that cannot be differentiated according to the eq class,
-        collapse them into an LCA taxonomy.
-        '''
-        
-        # Generate new OTU table. Has to be an Archive because this method is
-        # used twice, once for species EM and once for genus EM.
-        new_otu_table = ArchiveOtuTable()
-        new_otu_table.fields = sample_otus.fields
-        for otu in sample_otus:
-            otu_tax_to_coverage = {}
-            for tax in otu.equal_best_hit_taxonomies():
-                otu_tax_to_coverage[tax] = taxon_to_coverage[tax] if tax in taxon_to_coverage else 0
-            total_coverage = sum(otu_tax_to_coverage.values())
+        sample_summary_root_node = WordNode(None, "Root")
+        for tax, coverage in taxon_to_coverage.items(): 
+            sample_summary_root_node.add_words(tax, coverage)
 
-            for tax, coverage in otu_tax_to_coverage.items():
-                # This used to be a helpful sanity check, but it can
-                # legitimately happen for diamond-assigned OTUs since the
-                # median taxonomy can be longer than the final (and this is
-                # a strlen check not an array length check atm)
-                # if len(lca) < len(otu.taxonomy):
-                #     logging.error("Somehow EM has made taxonomy less specific than the original: {}".format(otu.taxonomy))
-                new_otu = ArchiveOtuTableEntry()
-                new_otu.data = otu.data.copy()
-                new_otu.data[ArchiveOtuTable.TAXONOMY_FIELD_INDEX] = tax
-                new_otu.data[ArchiveOtuTable.COVERAGE_FIELD_INDEX] = coverage / total_coverage * otu.coverage
-                logging.debug("Adding OTU taxonomy {} with coverage {}".format(tax, new_otu.coverage))
-                new_otu_table.add([new_otu])
-        return new_otu_table
+        return CondensedCommunityProfile(sample, sample_summary_root_node)
 
     def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain):
         taxon_to_genes = {}
