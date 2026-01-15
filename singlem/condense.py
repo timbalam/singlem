@@ -11,6 +11,7 @@ from .metapackage import Metapackage
 from .taxonomy import *
 
 import pdb
+import os
 
 DEFAULT_TRIM_PERCENT = 10
 DEFAULT_MIN_TAXON_COVERAGE = 0.35
@@ -103,7 +104,7 @@ class Condenser:
                     raise Exception("Domain: {} not supported.".format(domain))
                 
         for domain in target_domains:
-            if target_domains[domain] in [1, 2]:
+            if len(target_domains[domain]) in [1, 2]:
                 raise Exception("Number of markers for all domains must either be >= 3 or equal to 0. Only {} markers for domain '{}' found".format(target_domains[domain], domain))
 
         for sample, sample_otus in input_otu_table.each_sample_otus(generate_archive_otu_table=True):
@@ -116,7 +117,6 @@ class Condenser:
     def _condense_a_sample(self, sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage, 
             apply_query_expectation_maximisation, apply_diamond_expectation_maximisation, metapackage,
             output_after_em_otu_table, viral_mode, em_tim):
-
 
         # Remove off-target OTUs genes
         logging.debug("Total OTU coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
@@ -149,9 +149,9 @@ class Condenser:
         if em_tim:
             logging.info("Converting DIAMOND IDs to taxons")
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
-            condensed_otus = self._apply_tim_expectation_maximization(sample, sample_otus, target_domains, taxon_marker_counts, avg_num_genes_per_species)
-            logging.debug("Total OTU coverage: {}".format(sum([o.coverage for o in condensed_otus])))
-
+            condensed_otus = self._apply_tim_expectation_maximization(sample, sample_otus, genes_per_domain = target_domains)
+            logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
+        
         else:
             if apply_query_expectation_maximisation:
                 sample_otus = self._apply_species_expectation_maximization(sample_otus, trim_percent, target_domains, taxon_marker_counts)
@@ -636,12 +636,25 @@ class Condenser:
 
         sample_summary_root_node = WordNode(None, "Root")
         for tax, coverage in taxon_to_coverage.items(): 
-            sample_summary_root_node.add_words(tax, coverage)
+            sample_summary_root_node.add_words(TaxonomyUtils.split_taxonomy(tax), coverage)
 
         return CondensedCommunityProfile(sample, sample_summary_root_node)
 
-    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain):
-        taxon_to_genes = {}
+    def _find_descendents_with_missing_genes(self, sample_otus, genes_per_domain):
+        ''' Return a nested dict {taxon->{gene->set(taxon)}}
+            mapping ancestor taxons to genes to lists of descendents taxa
+            which are missing the gene.
+        '''
+
+        # Ideally, we expect that for a taxon that exists in a sample,
+        # for each gene targetting the domain of the taxon either:
+        # - the taxon will be the best hit, or
+        # - an ancestor taxon will be the best hit
+        #   (if gene is conserved at a higher rank).
+        # Here we find for all taxa that are a best hit for some OTU,
+        # which other genes (that target the domain of the taxon)
+        # don't also have a best hit for the taxon.
+        taxon_to_missing_genes = {} # {taxon -> set(marker)}
         for otu in sample_otus:
             if (
                     otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
@@ -649,29 +662,36 @@ class Condenser:
                     ):
                 for best_hit_tax in otu.equal_best_hit_taxonomies():
                     clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
-                    if clean_tax not in taxon_to_genes:
-                        taxon_to_genes[clean_tax] = set(genes_per_domain[clean_tax.split(';')[1].strip().replace('d__','')])
-                    taxon_to_genes[clean_tax].discard(otu.marker)
+                    if clean_tax not in taxon_to_missing_genes:
+                        taxon_to_missing_genes[clean_tax] = set(genes_per_domain[clean_tax.split(';')[1].strip().replace('d__','')])
+                    taxon_to_missing_genes[clean_tax].discard(otu.marker)
         
-        taxon_to_gene_to_descendent = {}
-        for tax, genes in taxon_to_genes.items():
-            if tax not in taxon_to_gene_to_descendent:
-                taxon_to_gene_to_descendent[tax] = {}
-            rem_genes = genes
+        # For taxa with 'missing' genes we can try to associate
+        # an OTU for which an ancestor taxon is best hit.
+        taxon_to_gene_to_descendent = {} # {taxon -> {marker -> set(taxon)}}
+        for tax, genes in taxon_to_missing_genes.items():
+            genes_still_missing = genes
             for anc in TaxonomyUtils.ancestor_taxonomies(tax):
-                if len(rem_genes) == 0:
+                if len(genes_still_missing) == 0:
                     break
-                if anc in taxon_to_genes:
+                if anc in taxon_to_missing_genes:
+                    anc_genes_not_missing = genes_still_missing - taxon_to_missing_genes[anc]
+                    if len(anc_genes_not_missing) == 0:
+                        continue
                     if anc not in taxon_to_gene_to_descendent:
                         taxon_to_gene_to_descendent[anc] = {}
-                    for anc_gene in rem_genes - taxon_to_genes[anc]:
+                    for anc_gene in anc_genes_not_missing:
                         if anc_gene not in taxon_to_gene_to_descendent[anc]:
-                            taxon_to_gene_to_descendent[anc][anc_gene] = set(tax)
-                        else:
-                            taxon_to_gene_to_descendent[anc][anc_gene].add(tax)
+                            taxon_to_gene_to_descendent[anc][anc_gene] = set()
+                        taxon_to_gene_to_descendent[anc][anc_gene].add(tax)
                     
-                    rem_genes &= taxon_to_genes[anc]
+                    genes_still_missing = genes_still_missing & taxon_to_missing_genes[anc]
+        
+        return taxon_to_gene_to_descendent
+    
+    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain):
 
+        taxon_to_gene_to_descendent = self._find_descendents_with_missing_genes(sample_otus, genes_per_domain)
 
         # Set up initial conditions. The coverage of each species is set to 1
         taxon_to_coverage = {}
@@ -683,6 +703,9 @@ class Condenser:
                     otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
+                
+                # initialise OTU for best hit taxa and descendents
+                # which had no best hit for this gene
                 best_hit_descendents = set()
                 for best_hit_tax in best_hit_taxonomies:
                     clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
@@ -699,8 +722,14 @@ class Condenser:
 
             otu_to_taxon_to_prop.append(taxon_to_prop)
 
-        if len(taxon_to_coverage) == 0: return None
+        os.makedirs("debug", exist_ok = True)
+        
+        logging.info("Dumping initial props")
+        with open("debug/initial.tsv", "w") as f:
+            debug_write_props(sample_otus, otu_to_taxon_to_prop, f)
 
+        if len(taxon_to_coverage) == 0: return None
+        
         num_steps = 0
         # The fraction of each undecided OTU is the ratio of that class's
         # coverage (coverage in the current iteration) to the total coverage of
@@ -708,8 +737,7 @@ class Condenser:
         while True: # while not converged
             taxon_to_gene_to_prop = {}
             num_steps += 1
-            for i, otu in enumerate(sample_otus):
-                taxon_to_prop = otu_to_taxon_to_prop[i]
+            for taxon_to_prop, otu in zip(otu_to_taxon_to_prop, sample_otus):
                 total_coverage = sum(prop * taxon_to_coverage[tax] for tax, prop in taxon_to_prop.items())
 
                 for tax, prop in taxon_to_prop.items():
@@ -722,8 +750,7 @@ class Condenser:
                     
             next_otu_to_taxon_to_prop = []
             max_coef_change = 0
-            for i, otu in enumerate(sample_otus):
-                taxon_to_prop = otu_to_taxon_to_prop[i]
+            for taxon_to_prop, otu in zip(otu_to_taxon_to_prop, sample_otus):
                 total_coverage = sum(prop * taxon_to_coverage[tax] for tax, prop in taxon_to_prop.items())
 
                 next_taxon_to_prop = {}
@@ -749,6 +776,10 @@ class Condenser:
             need_another_iteration = max_coef_change > 0.001
             if not need_another_iteration:
                 break
+        
+        logging.info("Dumping final props")
+        with open("debug/final.tsv", "w") as f:
+            debug_write_props(sample_otus, next_otu_to_taxon_to_prop, f)
         
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
@@ -801,7 +832,6 @@ class Condenser:
         best_hit_taxonomy_sets = set()
         some_em_to_do = False
         species_genes = {}
-
 
         for otu in sample_otus:
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
@@ -1256,6 +1286,22 @@ class CondensedCommunityProfileKronaWriter:
         for f in sample_tempfiles:
             f.close()
 
+def debug_write_props(sample_otus, otu_to_taxon_to_props, f):
+    #[{taxon -> prop}]
+    markers = [otu.marker for otu in sample_otus]
+    num_otus = len(markers)
+    taxon_to_otu_to_prop = {"marker": markers}
+    for i, taxon_to_props in enumerate(otu_to_taxon_to_props):
+        for tax, prop in taxon_to_props.items():
+            if tax not in taxon_to_otu_to_prop:
+                taxon_to_otu_to_prop[tax] = [0] * num_otus
+            taxon_to_otu_to_prop[tax][i] = prop
+    
+    f.write("\t".join(taxon_to_otu_to_prop.keys()))
+    f.write("\n")
+    for row in zip(*taxon_to_otu_to_prop.values()):
+        f.write("\t".join([str(i) for i in row]))
+        f.write("\n")
 
 
 
