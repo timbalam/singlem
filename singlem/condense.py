@@ -82,7 +82,6 @@ class Condenser:
         logging.info("Using minimum taxon coverage of {}".format(min_taxon_coverage))
 
         markers = {} # set of markers used to the domains they target
-        target_domains = {"Archaea": [], "Bacteria": [], "Eukaryota": [], "Viruses": []}
         
         for spkg in metapackage.singlem_packages:
             # ensure v3 packages
@@ -90,8 +89,11 @@ class Condenser:
                 raise Exception("Only works with v3 or v4 singlem packages.")
             marker_name = spkg.graftm_package_basename()
             markers[marker_name] = spkg.target_domains()
+        
+        target_domains = {"Archaea": [], "Bacteria": [], "Eukaryota": [], "Viruses": []}
+        for marker_name, domains in markers.items():
             # count number of markers for each domain
-            for domain in spkg.target_domains():
+            for domain in domains:
                 if domain == "Archaea":
                     target_domains["Archaea"] += [marker_name]
                 elif domain == "Bacteria":
@@ -149,7 +151,7 @@ class Condenser:
         if em_tim:
             logging.info("Converting DIAMOND IDs to taxons")
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
-            condensed_otus = self._apply_tim_expectation_maximization(sample, sample_otus, genes_per_domain = target_domains)
+            condensed_otus = self._apply_tim_expectation_maximization(sample, sample_otus, genes_to_domains = markers, genes_per_domain = target_domains)
             logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
         
         else:
@@ -561,8 +563,19 @@ class Condenser:
         logging.debug("Total coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
         logging.debug("Total coverage by diamond: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD])))
 
+        os.makedirs("5_novelty/debug", exist_ok = True)
+        
+        logging.info("Dumping best hits pre-demux")
+        genes_to_domains = kwargs["genes_to_domains"]
+        with open("5_novelty/debug/otu_hits.tsv", "w") as f:
+            debug_write_best_hits(sample_otus, genes_to_domains, f)
+        
         logging.info("Demultiplexing OTU best hits")
         demux_otus = self._demultiplex_best_hits(sample_otus)
+
+        logging.info("Dumping best hits post-demux")
+        with open("5_novelty/debug/demux_hits.tsv", "w") as f:
+            debug_write_best_hits(demux_otus, genes_to_domains, f)
 
         taxon_to_coverage = self._apply_tim_expectation_maximization_core(demux_otus, **kwargs)
 
@@ -689,7 +702,7 @@ class Condenser:
         
         return taxon_to_gene_to_descendent
     
-    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain):
+    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_to_domains, genes_per_domain):
 
         taxon_to_gene_to_descendent = self._find_descendents_with_missing_genes(sample_otus, genes_per_domain)
 
@@ -721,12 +734,10 @@ class Condenser:
                         taxon_to_coverage[best_hit_desc] = 1
 
             otu_to_taxon_to_prop.append(taxon_to_prop)
-
-        os.makedirs("debug", exist_ok = True)
         
         logging.info("Dumping initial props")
-        with open("debug/initial.tsv", "w") as f:
-            debug_write_props(sample_otus, otu_to_taxon_to_prop, f)
+        with open("5_novelty/debug/props_initial.tsv", "w") as f:
+            debug_write_props(sample_otus, otu_to_taxon_to_prop, genes_to_domains, f)
 
         if len(taxon_to_coverage) == 0: return None
         
@@ -778,8 +789,8 @@ class Condenser:
                 break
         
         logging.info("Dumping final props")
-        with open("debug/final.tsv", "w") as f:
-            debug_write_props(sample_otus, next_otu_to_taxon_to_prop, f)
+        with open("5_novelty/debug/props_final.tsv", "w") as f:
+            debug_write_props(sample_otus, next_otu_to_taxon_to_prop, genes_to_domains, f)
         
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
@@ -1286,21 +1297,50 @@ class CondensedCommunityProfileKronaWriter:
         for f in sample_tempfiles:
             f.close()
 
-def debug_write_props(sample_otus, otu_to_taxon_to_props, f):
+def debug_write_props(sample_otus, otu_to_taxon_to_props, genes_to_domains, f):
     #[{taxon -> prop}]
-    markers = [otu.marker for otu in sample_otus]
-    num_otus = len(markers)
-    taxon_to_otu_to_prop = {"marker": markers}
-    for i, taxon_to_props in enumerate(otu_to_taxon_to_props):
+    num_otus = len(otu_to_taxon_to_props)
+    taxon_to_otu_to_prop = {"marker": [""] * num_otus,
+                            "domain": [""] * num_otus,
+                            #"sequence": [""] * num_otus,
+                            "coverage": ["0"] * num_otus}
+    for i, (otu, taxon_to_props) in enumerate(zip(sample_otus, otu_to_taxon_to_props)):
+        taxon_to_otu_to_prop["marker"][i] = otu.marker
+        taxon_to_otu_to_prop["domain"][i] = ";".join(genes_to_domains[otu.marker])
+        #taxon_to_otu_to_prop["sequence"][i] = otu.sequence
+        taxon_to_otu_to_prop["coverage"][i] = f"{otu.coverage:.3}"
         for tax, prop in taxon_to_props.items():
             if tax not in taxon_to_otu_to_prop:
-                taxon_to_otu_to_prop[tax] = [0] * num_otus
-            taxon_to_otu_to_prop[tax][i] = prop
+                taxon_to_otu_to_prop[tax] = ["0"] * num_otus
+            taxon_to_otu_to_prop[tax][i] = f"{float(prop):.3}"
     
     f.write("\t".join(taxon_to_otu_to_prop.keys()))
     f.write("\n")
     for row in zip(*taxon_to_otu_to_prop.values()):
-        f.write("\t".join([str(i) for i in row]))
+        f.write("\t".join(row))
+        f.write("\n")
+
+def debug_write_best_hits(sample_otus, genes_to_domains, f):
+    sample_otus = list(sample_otus)
+    num_otus = len(sample_otus)
+    taxon_to_otu_to_hit = {"marker": [""] * num_otus,
+                           "domain": [""] * num_otus,
+                           #"sequence": [""] * num_otus,
+                           "coverage": ["0"] * num_otus}
+    for i, otu in enumerate(sample_otus):
+        taxon_to_otu_to_hit["marker"][i] = otu.marker
+        taxon_to_otu_to_hit["domain"][i] = ";".join(genes_to_domains[otu.marker])
+        #taxon_to_otu_to_hit["sequence"][i] = otu.sequence
+        taxon_to_otu_to_hit["coverage"][i] = f"{otu.coverage:.3}"
+        for best_hit_tax in otu.equal_best_hit_taxonomies():
+            if best_hit_tax not in taxon_to_otu_to_hit:
+                taxon_to_otu_to_hit[best_hit_tax] = ["0"] * num_otus
+            taxon_to_otu_to_hit[best_hit_tax][i] = "1"
+    
+    f.write("\t".join(taxon_to_otu_to_hit.keys()))
+    f.write("\n")
+    for row in zip(*taxon_to_otu_to_hit.values()):
+        f.write("\t".join(row))
         f.write("\n")
 
 
