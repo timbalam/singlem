@@ -82,7 +82,14 @@ class PipeTaxonomyAssignerByQuery:
 
         def process_hits_batch(window_to_read_names, spkg_key, current_hits, pair_index):
             # Get LCA of taxonomy of best hits
-            hit_taxonomies = list([h.subject.taxonomy for h in current_hits])
+            best_hit_divergence = min([h.divergence for h in current_hits])
+            best_hit_taxonomies = []
+            good_hit_taxonomies = []
+            for h in current_hits:
+                if h.divergence == best_hit_divergence:
+                    best_hit_taxonomies.append(h.subject.taxonomy)
+                else:
+                    good_hit_taxonomies.append(h.subject.taxonomy)
             # We want the final result to be a hash of spkg to sample name to hash of sequence name to taxonomies list
             for hit in current_hits:
                 for sample_name in aligned_seqs_to_package_and_sample_name[pair_index][hit.query.sequence].keys():
@@ -91,7 +98,7 @@ class PipeTaxonomyAssignerByQuery:
                     if sample_name not in final_result[pair_index][spkg_key]:
                         final_result[pair_index][spkg_key][sample_name] = {}
                     for read_name in window_to_read_names[pair_index][hit.query.sequence]:
-                        final_result[pair_index][spkg_key][sample_name][read_name] = hit_taxonomies
+                        final_result[pair_index][spkg_key][sample_name][read_name] = (best_hit_taxonomies, good_hit_taxonomies)
 
         def query_single_set(queries, pair_index):
             last_query = None
@@ -99,7 +106,7 @@ class PipeTaxonomyAssignerByQuery:
 
             if len(queries) > 0:
                 logging.info("Querying against species database with %d sequences, using method %s and max divergence %s" % (len(queries), method, max_species_divergence))
-                for hit in querier.query_with_queries(queries, sdb, max_species_divergence, method, SequenceDatabase.NUCLEOTIDE_TYPE, 1, None, False, None):
+                for hit in querier.query_with_queries(queries, sdb, max_species_divergence, method, SequenceDatabase.NUCLEOTIDE_TYPE, None, None, False, None):
                     # hit has (query, subject, divergence)
                     # subject has .taxonomy
                     if last_query != hit.query.name:

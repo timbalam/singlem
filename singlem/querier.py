@@ -394,7 +394,11 @@ class Querier:
                     smafa_args += " --max-num-hits {}".format(max_nearest_neighbours)
                 smafa_cmd = 'smafa query --database \'{}\' --query /dev/stdin {}'.format(
                     index, smafa_args)
-                smafa_stdout = extern.run(smafa_cmd, stdin='\n'.join([">{}\n{}".format(i, q.sequence) for i, q in enumerate(chunked_queries)]))
+                smafa_stdout = extern.run(
+                    smafa_cmd,
+                    stdin='\n'.join([">{}\n{}".format(i, q.sequence)
+                                     for i, q in enumerate(chunked_queries)])
+                )
 
                 if not preload_db:
                     batch_for_db_queries = []
@@ -415,7 +419,10 @@ class Querier:
                     div = int(div_str)
 
                     if query_index == previous_query_index:
-                        if previous_query_index_num_reported > max_nearest_neighbours:
+                        if (
+                            max_nearest_neighbours is not None
+                            and previous_query_index_num_reported > max_nearest_neighbours
+                        ):
                             continue
                         previous_query_index_num_reported += 1
                     else:

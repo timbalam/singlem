@@ -10,7 +10,6 @@ from .archive_otu_table import ArchiveOtuTable, ArchiveOtuTableEntry
 from .metapackage import Metapackage
 from .taxonomy import *
 
-import pdb
 import os
 
 DEFAULT_TRIM_PERCENT = 10

@@ -479,8 +479,6 @@ class SearchPipe:
             if extracted_reads is None:
                 return_cleanly()
                 return OtuTable()
-
-
         
         for readset in extracted_reads:
             if analysing_pairs:
@@ -488,8 +486,6 @@ class SearchPipe:
                 self._remove_single_sequence_duplicates(readset[1])
             else:
                 self._remove_single_sequence_duplicates(readset)
-
-
 
         #### Remove duplications which happen when OrfM hits the same sequence more than once.
         if genome_fasta_files:
@@ -1237,7 +1233,6 @@ class SearchPipe:
 
         graftm_align_directory_base = os.path.join(self._working_directory, 'graftm_aligns')
         os.mkdir(graftm_align_directory_base)
-        commands = []
 
         def generate_tempfile_for_readset(readset):
             tmp = tempfile.NamedTemporaryFile(
@@ -1288,14 +1283,13 @@ class SearchPipe:
             else:
                 logging.info("Finished running singlem query-based taxonomic assignment, now running diamond ..")
 
-
-
         # Run each one at a time serially so that the number of threads is
         # respected, to save RAM as one DB needs to be loaded at once, and so
         # fewer open files are needed, so that the open file count limit is
         # eased.
         diamond_results = []
         all_tmp_files = []
+        commands = []
         for singlem_package, readsets in extracted_reads.each_package_wise():
             tmp_files = []
             for readset in readsets:
@@ -1308,11 +1302,12 @@ class SearchPipe:
 
                         # Only assign taxonomy to the sequences that are
                         # still "unknown" after the query.
-                        still_unknown_sequences = [\
-                            [u for u in readset[0].unknown_sequences if not \
-                                query_based_assignment_result.is_assigned_taxonomy(singlem_package, readset[0].sample_name, u.name, 0)],
-                            [u for u in readset[1].unknown_sequences if not \
-                                query_based_assignment_result.is_assigned_taxonomy(singlem_package, readset[0].sample_name, u.name, 1)]]
+                        still_unknown_sequences = (
+                            [u for u in readset[0].unknown_sequences
+                             if not query_based_assignment_result.is_assigned_taxonomy(singlem_package, readset[0].sample_name, u.name, 0)],
+                            [u for u in readset[1].unknown_sequences
+                             if not query_based_assignment_result.is_assigned_taxonomy(singlem_package, readset[0].sample_name, u.name, 1)]
+                        )
 
                         if len(still_unknown_sequences[0] + still_unknown_sequences[1]) > 0:
                             logging.info("Assigning taxonomy with DIAMOND for {} and {} out of {} and {} sequences ({}% and {}%) for sample {}, package {}".format(
@@ -1426,7 +1421,7 @@ class SearchPipe:
                                 logging.debug("Command:" + cmd2)
                                 extern.run(cmd2)
 
-                                chunk_best_hits = {}
+                                chunk_best_good_hits = {}
                                 chunk_best_hit_bitscores = {}
 
                                 with open(diamond_out.name) as d:
@@ -1440,17 +1435,17 @@ class SearchPipe:
                                             if bitscore > chunk_best_hit_bitscores[query]:
                                                 raise Exception("Unexpected order of DIAMOND results during taxonomy assignment")
                                             elif bitscore == chunk_best_hit_bitscores[query]:
-                                                chunk_best_hits[query].append(subject)
+                                                chunk_best_good_hits[query][0].append(subject)
                                             else:
                                                 # Close but no cigar for this hit, not exactly the same bitscore
-                                                pass
+                                                chunk_best_good_hits[query][1].append(subject)
                                         else:
-                                            chunk_best_hits[query] = [subject]
+                                            chunk_best_good_hits[query] = ([subject], [])
                                             chunk_best_hit_bitscores[query] = bitscore
 
                                 # Summarise this chunk to LCA
                                 if assignment_method == DIAMOND_EXAMPLE_BEST_HIT_ASSIGNMENT_METHOD:
-                                    for (query, best_hit_ids) in chunk_best_hits.items():
+                                    for (query, (best_hit_ids, good_hit_ids)) in chunk_best_good_hits.items():
                                         best_hits[query] = best_hit_ids[0]
                                 elif assignment_method in (
                                     DIAMOND_ASSIGNMENT_METHOD,
@@ -1458,8 +1453,8 @@ class SearchPipe:
                                     SCANN_THEN_DIAMOND_ASSIGNMENT_METHOD,
                                     SCANN_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD,
                                     SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD):
-                                    for (query, best_hit_ids) in chunk_best_hits.items():
-                                        best_hits[query] = best_hit_ids
+                                    for (query, best_good_hits) in chunk_best_good_hits.items():
+                                        best_hits[query] = best_good_hits
                                 else:
                                     raise Exception("Programming error")
 
@@ -1489,7 +1484,7 @@ class SearchPipe:
 
                     cmd_stub = "diamond blastx " \
                         "--outfmt 6 qseqid sseqid bitscore " \
-                        "--top 1 " \
+                        "--top 5 " \
                         "--evalue 0.01 " \
                         "--threads %i " \
                         "--query-gencode %i " \
@@ -1847,13 +1842,13 @@ class DiamondTaxonomicAssignmentResult:
         logging.debug("Reading taxonomy hash for {}".format(singlem_package.base_directory()))
         tax_hash = singlem_package.taxonomy_hash()
 
-        equal_best_hits = self.get_equal_best_hits(singlem_package, sample_name)
+        equal_best_hits = self.get_equal_best_hits(singlem_package, sample_name, good_hits = True)
         if self._analysing_pairs:
             return [
-                {k:self._lca_string([tax_hash[tax_id] for tax_id in v]) for k,v in equal_best_hits[0].items()},
-                {k:self._lca_string([tax_hash[tax_id] for tax_id in v]) for k,v in equal_best_hits[1].items()}]
+                {k:self._lca_string([tax_hash[tax_id] for tax_id in v[0]]) for k,v in equal_best_hits[0].items()},
+                {k:self._lca_string([tax_hash[tax_id] for tax_id in v[0]]) for k,v in equal_best_hits[1].items()}]
         else:
-            return {k:self._lca_string([tax_hash[tax_id] for tax_id in v]) for k,v in equal_best_hits.items()}
+            return {k:self._lca_string([tax_hash[tax_id] for tax_id in v[0]]) for k,v in equal_best_hits.items()}
 
     def _lca_string(self, taxon_list):
         taxon_list2 = TaxonomyUtils.lca_taxonomy_of_taxon_lists(taxon_list)
@@ -1862,14 +1857,26 @@ class DiamondTaxonomicAssignmentResult:
         else:
             return 'Root; '+taxon_list2
 
-    def get_equal_best_hits(self, singlem_package, sample_name):
-        '''Return each value as a DIAMOND ID.'''
+    def get_equal_best_hits(self, singlem_package, sample_name, good_hits = False):
+        '''Return each value as a DIAMOND ID.
+        'good_hits = True' returns a tuple (best_hits, good_hits)
+        '''
 
         spkg_key = singlem_package.base_directory()
         if spkg_key in self._package_to_sample_to_best_hits and \
             sample_name in self._package_to_sample_to_best_hits[spkg_key]:
 
-            return self._package_to_sample_to_best_hits[spkg_key][sample_name]
+            equal_best_hits = self._package_to_sample_to_best_hits[spkg_key][sample_name]
+            if self._analysing_pairs:
+                if good_hits:
+                    return equal_best_hits
+                else:
+                    return [{k:v[0] for (k, v) in equal_best_hits[0].items()},
+                            {k:v[0] for (k, v) in equal_best_hits[1].items()}]
+            elif good_hits:
+                return equal_best_hits
+            else:
+                return {k:v[0] for (k, v) in equal_good_hits}
         else:
             # When no seqs are assigned taxonomy by diamond
             if self._analysing_pairs:
