@@ -4,7 +4,7 @@ from .otu_table_entry import OtuTableEntry
 
 
 class ArchiveOtuTable:
-    version = 4
+    version = 5
 
     FIELDS_VERSION1 = str.split(
         'gene    sample    sequence    num_hits    coverage    taxonomy    read_names    nucleotides_aligned  taxonomy_by_known?'
@@ -18,23 +18,28 @@ class ArchiveOtuTable:
     FIELDS_VERSION4 = str.split(
         'gene    sample    sequence    num_hits    coverage    taxonomy    read_names    nucleotides_aligned  taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method'
     )
+    FIELDS_VERSION5 = str.split(
+        'gene    sample    sequence    num_hits    coverage    taxonomy    read_names    nucleotides_aligned  taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method  good_taxonomies'
+    )
     FIELDS_OF_EACH_VERSION = [
         FIELDS_VERSION1,
         FIELDS_VERSION2,
         FIELDS_VERSION3,
         FIELDS_VERSION4,
+        FIELDS_VERSION5
     ]
     FIELDS = FIELDS_OF_EACH_VERSION[version - 1]
 
     READ_NAME_FIELD_INDEX = 6
-    SAMPLE_ID_FIELD_INDEX = FIELDS_VERSION4.index('sample')
-    UNALIGNED_SEQUENCE_FIELD_INDEX = FIELDS_VERSION4.index('read_unaligned_sequences')
-    EQUAL_BEST_HIT_TAXONOMIES_INDEX = FIELDS_VERSION4.index('equal_best_hit_taxonomies')
-    TAXONOMY_ASSIGNMENT_METHOD_INDEX = FIELDS_VERSION4.index('taxonomy_assignment_method')
-    COVERAGE_FIELD_INDEX = FIELDS_VERSION4.index('coverage')
-    TAXONOMY_FIELD_INDEX = FIELDS_VERSION4.index('taxonomy')
-    NUCLEOTIDES_ALIGNED_FIELD_INDEX = FIELDS_VERSION4.index('nucleotides_aligned')
-    TAXONOMY_BY_KNOWN_FIELD_INDEX = FIELDS_VERSION4.index('taxonomy_by_known?')
+    SAMPLE_ID_FIELD_INDEX = FIELDS.index('sample')
+    UNALIGNED_SEQUENCE_FIELD_INDEX = FIELDS.index('read_unaligned_sequences')
+    EQUAL_BEST_HIT_TAXONOMIES_INDEX = FIELDS.index('equal_best_hit_taxonomies')
+    TAXONOMY_ASSIGNMENT_METHOD_INDEX = FIELDS.index('taxonomy_assignment_method')
+    COVERAGE_FIELD_INDEX = FIELDS.index('coverage')
+    TAXONOMY_FIELD_INDEX = FIELDS.index('taxonomy')
+    NUCLEOTIDES_ALIGNED_FIELD_INDEX = FIELDS.index('nucleotides_aligned')
+    TAXONOMY_BY_KNOWN_FIELD_INDEX = FIELDS.index('taxonomy_by_known?')
+    GOOD_TAXONOMIES_FIELD_INDEX = FIELDS.index('good_taxonomies')
 
     def __init__(self, singlem_packages=None):
         self.singlem_packages = singlem_packages
@@ -72,7 +77,7 @@ class ArchiveOtuTable:
     def read(input_io, min_version=None):
         otus = ArchiveOtuTable()
         j = json.load(input_io)
-        if not j['version'] in [1, 2, 3, 4]:
+        if not j['version'] in [1, 2, 3, 4, 5]:
             raise Exception("Wrong OTU table version detected")
         otus.version = j['version']
         if min_version is not None and otus.version < min_version:
@@ -132,6 +137,9 @@ class ArchiveOtuTableEntry(OtuTableEntry):
     
     def taxonomy(self):
         return self.data[ArchiveOtuTable.TAXONOMY_FIELD_INDEX]
+    
+    def good_taxonomies(self):
+        return self.data[ArchiveOtuTable.GOOD_TAXONOMIES_FIELD_INDEX]
 
 
 class InsufficientArchiveOtuTableVersionException(Exception):

@@ -51,3 +51,13 @@ class TaxonomyUtils:
         while len(tax) > 0:
             yield '; '.join(tax)
             tax = tax[:-1]
+    
+    @staticmethod
+    def ensure_root(taxonomy_string):
+        return (
+            'Root'
+            if taxonomy_string == ''
+            else taxonomy_string
+            if taxonomy_string.startswith('Root')
+            else 'Root; '+taxonomy_string
+        )

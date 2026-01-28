@@ -123,7 +123,6 @@ class SearchPipe:
             output_extras,
             metapackage,
             exclude_off_target_hits):
-        otu_table_object.fields = ArchiveOtuTable.FIELDS
         if output_otu_table:
             from .summariser import Summariser
             with open(output_otu_table, 'w') as f:
@@ -557,6 +556,7 @@ class SearchPipe:
 
         #### Process taxonomically assigned reads
         otu_table_object = OtuTable()
+        otu_table_object.fields = ArchiveOtuTable.FIELDS
         package_to_taxonomy_bihash = {}
 
         for readset in extracted_reads:
@@ -628,8 +628,6 @@ class SearchPipe:
         sample_name = readset_example.sample_name
         singlem_package = readset_example.singlem_package
 
-
-
         def add_info(infos, otu_table_object, known_tax):
             for info in infos:
                 # correcting the read~gene format (introduced for long read compatibility)
@@ -641,6 +639,14 @@ class SearchPipe:
                     key=lambda x: x[0]
                 ))
 
+                if info.taxonomy_assignment_method in (
+                    DIAMOND_ASSIGNMENT_METHOD,
+                    SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD
+                ):
+                    (equal_best_tax, good_tax) = info.equal_best_taxonomies
+                else:
+                    equal_best_tax = info.equal_best_taxonomies
+                    good_tax = []
                 to_print = [
                     singlem_package.graftm_package_basename(),
                     sample_name,
@@ -652,8 +658,9 @@ class SearchPipe:
                     info.aligned_lengths,
                     known_tax,
                     list([ns[1] for ns in names_and_sequences]),
-                    info.equal_best_taxonomies,
-                    info.taxonomy_assignment_method]
+                    equal_best_tax,
+                    info.taxonomy_assignment_method,
+                    good_tax]
                 otu_table_object.data.append(to_print)
 
         def extract_placement_parser(
@@ -729,6 +736,8 @@ class SearchPipe:
                                 taxonomies[name] = best_hits
                             for (name, equal_best_hits) in equal_best_hit_hash.items():
                                 equal_best_taxonomies[name] = equal_best_hits
+                        
+                        placement_parser = None
 
                     elif singlem_assignment_method in (
                         DIAMOND_EXAMPLE_BEST_HIT_ASSIGNMENT_METHOD,
@@ -739,32 +748,45 @@ class SearchPipe:
                         SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD,):
                         best_hit_hash = assignment_result.get_best_hits(singlem_package, sample_name)
                         taxonomies = {}
-                        equal_best_hit_hash = assignment_result.get_equal_best_hits(singlem_package, sample_name)
-                        equal_best_taxonomies = {}
                         if analysing_pairs:
                             for (name, best_hits) in best_hit_hash[1].items():
                                 taxonomies[name] = best_hits
                             for (name, best_hits) in best_hit_hash[0].items():
                                 # Overwrite reverse hit with the forward hit
                                 taxonomies[name] = best_hits
-                            for (name, equal_best_hits) in equal_best_hit_hash[1].items():
-                                equal_best_taxonomies[name] = equal_best_hits
-                            for (name, equal_best_hits) in equal_best_hit_hash[0].items():
-                                # Overwrite reverse hit with the forward hit
-                                equal_best_taxonomies[name] = equal_best_hits
                         else:
                             for (name, best_hits) in best_hit_hash.items():
                                 taxonomies[name] = best_hits
-                            for (name, equal_best_hits) in equal_best_hit_hash.items():
-                                equal_best_taxonomies[name] = equal_best_hits
-
+                        
+                        if singlem_assignment_method == DIAMOND_EXAMPLE_BEST_HIT_ASSIGNMENT_METHOD:
+                            equal_best_taxonomies = None
+                        else:
+                            equal_best_taxonomies = {}
+                            equal_best_hit_hash = (
+                                assignment_result.get_equal_best_hits(singlem_package, sample_name, good_hits = True)
+                                if singlem_assignment_method in (
+                                    DIAMOND_ASSIGNMENT_METHOD,
+                                    SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD
+                                )
+                                else assignment_result.get_equal_best_hits(singlem_package, sample_name)
+                            )
+                            if analysing_pairs:
+                                for (name, equal_best_hits) in equal_best_hit_hash[1].items():
+                                    equal_best_taxonomies[name] = equal_best_hits
+                                for (name, equal_best_hits) in equal_best_hit_hash[0].items():
+                                    # Overwrite reverse hit with the forward hit
+                                    equal_best_taxonomies[name] = equal_best_hits
+                            else:
+                                for (name, equal_best_hits) in equal_best_hit_hash.items():
+                                    equal_best_taxonomies[name] = equal_best_hits
                         if singlem_assignment_method in (
                             DIAMOND_EXAMPLE_BEST_HIT_ASSIGNMENT_METHOD,
                             DIAMOND_ASSIGNMENT_METHOD):
                             assignment_methods = SingleAnswerAssignmentMethodStore(singlem_assignment_method)
                         else:
                             assignment_methods = assignment_result.get_taxonomy_assignment_methods(singlem_package, sample_name)
-
+                        placement_parser = None
+                        
                     elif singlem_assignment_method == PPLACER_ASSIGNMENT_METHOD:
                         assignment_methods = SingleAnswerAssignmentMethodStore(singlem_assignment_method)
                         bihash_key = singlem_package.base_directory()
@@ -795,33 +817,33 @@ class SearchPipe:
                                 sample_name, singlem_package, readset.tmpfile_basename,
                                 taxonomy_bihash)
                         taxonomies = {}
+                        equal_best_taxonomies = None
+
                     elif singlem_assignment_method == NO_ASSIGNMENT_METHOD:
                         assignment_methods = SingleAnswerAssignmentMethodStore(singlem_assignment_method)
                         taxonomies = {}
+                        equal_best_taxonomies = None
+                        placement_parser = None
+
                     else:
                         raise Exception("Programming error")
 
+
                 else: # Taxonomy has not been assigned.
                     assignment_methods = SingleAnswerAssignmentMethodStore(NO_ASSIGNMENT_METHOD)
-                    if known_sequence_taxonomy:
-                        taxonomies = known_sequence_tax
-                    else:
-                        taxonomies = {}
-
-
+                    taxonomies = (
+                        known_sequence_tax if known_sequence_taxonomy else {}
+                    )
+                    equal_best_taxonomies = None
+                    placement_parser = None
+                    
 
                 new_infos = list(self._seqs_to_counts_and_taxonomy(
                     aligned_seqs, singlem_assignment_method,
                     known_sequence_tax if known_sequence_taxonomy else {},
                     taxonomies,
-                    equal_best_taxonomies if singlem_assignment_method in (
-                        DIAMOND_ASSIGNMENT_METHOD,
-                        ANNOY_ASSIGNMENT_METHOD,
-                        ANNOY_THEN_DIAMOND_ASSIGNMENT_METHOD,
-                        SCANN_THEN_DIAMOND_ASSIGNMENT_METHOD,
-                        SCANN_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD,
-                        SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD) else None,
-                    placement_parser if singlem_assignment_method == PPLACER_ASSIGNMENT_METHOD else None,
+                    equal_best_taxonomies,
+                    placement_parser,
                     assignment_methods))
 
                 if output_jplace:
@@ -924,8 +946,6 @@ class SearchPipe:
                     tax = per_read_taxonomies[s.name]
                 except KeyError:
                     tax = ''
-                    if per_read_equal_best_taxonomies is not None:
-                        equal_best_tax = ''
                     if assignment_method != NO_ASSIGNMENT_METHOD and \
                        assignment_method != PPLACER_ASSIGNMENT_METHOD:
                         # happens sometimes when HMMER picks up something where
@@ -933,11 +953,11 @@ class SearchPipe:
                         # but the hit to the gene-specific dmnd does not.
                         logging.warning("Did not find any taxonomy information for %s" % s.name)
                         tax = 'Root'
-                try:
-                    if per_read_equal_best_taxonomies is not None:
+                
+                if per_read_equal_best_taxonomies is not None:
+                    try:
                         equal_best_tax = per_read_equal_best_taxonomies[s.name]
-                except KeyError:
-                    if per_read_equal_best_taxonomies is not None:
+                    except KeyError:
                         equal_best_tax = None
 
             try:
@@ -1961,10 +1981,10 @@ class QueryThenDiamondTaxonomicAssignmentResult:
                 diamond_best_hits[tax_id] = taxonomy
         return diamond_best_hits
 
-    def get_equal_best_hits(self, singlem_package, sample_name):
+    def get_equal_best_hits(self, singlem_package, sample_name, good_hits = False):
         # Right now just return the query best hits
-        query_equals = self._query_assignment_result.get_equal_best_hits(singlem_package, sample_name)
-        diamond_equals = self._diamond_assignment_result.get_equal_best_hits(singlem_package, sample_name)
+        query_equals = self._query_assignment_result.get_equal_best_hits(singlem_package, sample_name, good_hits)
+        diamond_equals = self._diamond_assignment_result.get_equal_best_hits(singlem_package, sample_name, good_hits)
 
         if self._analysing_pairs:
             if query_equals == {}:
