@@ -30,7 +30,6 @@ from graftm.sequence_extractor import SequenceExtractor
 from graftm.greengenes_taxonomy import GreenGenesTaxonomy
 from graftm.sequence_search_results import HMMSearchResult, SequenceSearchResult
 
-
 DEFAULT_THREADS = 1
 
 class SearchPipe:
@@ -45,6 +44,7 @@ class SearchPipe:
     DEFAULT_TAXONOMY_ASSIGNMENT_METHOD = SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD
     DEFAULT_HMMSEARCH_EVALUE = 1e-5
     DEFAULT_MAX_SPECIES_DIVERGENCE = 2
+    DEFAULT_DIAMOND_TOP = 2
 
     def run(self, **kwargs):
         output_otu_table = kwargs.pop('otu_table', None)
@@ -96,9 +96,6 @@ class SearchPipe:
                     viral_mode = viral_profile_output,
                 )
 
-
-
-
     def _parse_packages_or_metapackage(self, **kwargs):
         metapackage_path = kwargs.pop('metapackage_path', None)
         singlem_package_paths = kwargs.pop('singlem_packages', None)
@@ -142,7 +139,6 @@ class SearchPipe:
             with open(archive_otu_table, 'w') as f:
                 otu_table_object.archive(metapackage).write_to(f)
 
-
     def run_to_otu_table(self, **kwargs):
         '''Run the pipe'''
         forward_read_files = kwargs.pop('sequences', [])
@@ -178,6 +174,7 @@ class SearchPipe:
         diamond_taxonomy_assignment_performance_parameters = kwargs.pop('diamond_taxonomy_assignment_performance_parameters', None)
         assignment_singlem_db = kwargs.pop('assignment_singlem_db', None)
         max_species_divergence = kwargs.pop('max_species_divergence', SearchPipe.DEFAULT_MAX_SPECIES_DIVERGENCE)
+        diamond_top = kwargs.pop('diamond_top', SearchPipe.DEFAULT_DIAMOND_TOP)
 
         working_directory = kwargs.pop('working_directory', None)
         working_directory_dev_shm = kwargs.pop('working_directory_dev_shm', None)
@@ -193,6 +190,7 @@ class SearchPipe:
         self._filter_minimum_protein = filter_minimum_protein
         self._filter_minimum_nucleotide = filter_minimum_nucleotide
         self._max_species_divergence = max_species_divergence
+        self._diamond_top = diamond_top
 
         if metapackage_object:
             hmms = metapackage_object
@@ -639,14 +637,6 @@ class SearchPipe:
                     key=lambda x: x[0]
                 ))
 
-                if info.taxonomy_assignment_method in (
-                    DIAMOND_ASSIGNMENT_METHOD,
-                    SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD
-                ):
-                    (equal_best_tax, good_tax) = info.equal_best_taxonomies
-                else:
-                    equal_best_tax = info.equal_best_taxonomies
-                    good_tax = []
                 to_print = [
                     singlem_package.graftm_package_basename(),
                     sample_name,
@@ -658,9 +648,9 @@ class SearchPipe:
                     info.aligned_lengths,
                     known_tax,
                     list([ns[1] for ns in names_and_sequences]),
-                    equal_best_tax,
+                    info.equal_best_taxonomies,
                     info.taxonomy_assignment_method,
-                    good_tax]
+                    info.good_taxonomies]
                 otu_table_object.data.append(to_print)
 
         def extract_placement_parser(
@@ -934,6 +924,9 @@ class SearchPipe:
                 self.aligned_lengths = []
                 self.orf_names = []
                 self.known_sequence_taxonomies = []
+                self.good_taxonomies = []
+
+        import pdb; pdb.set_trace()
 
         seq_to_collected_info = {}
         for s in sequences:
@@ -941,6 +934,7 @@ class SearchPipe:
                 per_read_taxonomies is None:
                 tax = None
                 equal_best_tax = None
+                good_tax = None
             else:
                 try:
                     tax = per_read_taxonomies[s.name]
@@ -957,8 +951,19 @@ class SearchPipe:
                 if per_read_equal_best_taxonomies is not None:
                     try:
                         equal_best_tax = per_read_equal_best_taxonomies[s.name]
+
+                        otu_taxonomy_assignment_method = taxonomy_assignment_methods.get_assignment_method(s.name)
+                        if otu_taxonomy_assignment_method in (
+                            DIAMOND_ASSIGNMENT_METHOD,
+                            SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD
+                        ):
+                            good_tax = equal_best_tax[1]
+                            equal_best_tax = equal_best_tax[0]
+                        else:
+                            good_tax = None
                     except KeyError:
                         equal_best_tax = None
+                        good_tax = None
 
             try:
                 collected_info = seq_to_collected_info[s.aligned_sequence]
@@ -971,6 +976,8 @@ class SearchPipe:
                 collected_info.taxonomies.append(tax)
             if per_read_equal_best_taxonomies is not None and equal_best_tax is not None:
                 collected_info.equal_best_taxonomies.append(equal_best_tax)
+            if per_read_equal_best_taxonomies is not None and good_tax is not None:
+                collected_info.good_taxonomies.append(good_tax)
             collected_info.names.append(s.name)
             collected_info.unaligned_sequences.append(s.unaligned_sequence)
             collected_info.coverage += s.coverage_increment()
@@ -978,7 +985,9 @@ class SearchPipe:
             collected_info.orf_names.append(s.orf_name)
 
         class Info:
-            def __init__(self, seq, count, taxonomy, equal_best_taxonomies, names, unaligned_sequences, coverage, aligned_lengths, taxonomy_assignment_method):
+            def __init__(self, seq, count, taxonomy, equal_best_taxonomies, names,
+                         unaligned_sequences, coverage, aligned_lengths,
+                         taxonomy_assignment_method, good_taxonomies):
                 self.seq = seq
                 self.count = count
                 self.taxonomy = taxonomy
@@ -988,6 +997,7 @@ class SearchPipe:
                 self.coverage = coverage
                 self.aligned_lengths = aligned_lengths
                 self.taxonomy_assignment_method = taxonomy_assignment_method
+                self.good_taxonomies = good_taxonomies
 
         for seq, collected_info in seq_to_collected_info.items():
             # All seqs in OTU have the same assignment method, except in rare
@@ -1021,12 +1031,19 @@ class SearchPipe:
                 if per_read_equal_best_taxonomies is not None:
                     if otu_taxonomy_assignment_method == DIAMOND_ASSIGNMENT_METHOD:
                         equal_best_tax = collected_info.equal_best_taxonomies
+                        good_tax = collected_info.good_taxonomies
                     else:
                         # For query assigned taxonomies this is right
-                        if collected_info.equal_best_taxonomies != []:
-                            equal_best_tax = collected_info.equal_best_taxonomies[0]
-                        else:
-                            equal_best_tax = None
+                        equal_best_tax = (
+                            collected_info.equal_best_taxonomies[0]
+                            if collected_info.equal_best_taxonomies != []
+                            else None
+                        )
+                        good_tax = (
+                            collected_info.good_taxonomies[0]
+                            if collected_info.good_taxonomies != []
+                            else None
+                        )
 
             yield Info(seq,
                        collected_info.count,
@@ -1036,7 +1053,8 @@ class SearchPipe:
                        collected_info.unaligned_sequences,
                        collected_info.coverage,
                        collected_info.aligned_lengths,
-                       otu_taxonomy_assignment_method)
+                       otu_taxonomy_assignment_method,
+                       good_tax if per_read_equal_best_taxonomies is not None else None)
 
     def _median_taxonomy(self, taxonomies):
         levels_to_counts = []
@@ -1504,11 +1522,12 @@ class SearchPipe:
 
                     cmd_stub = "diamond blastx " \
                         "--outfmt 6 qseqid sseqid bitscore " \
-                        "--top 5 " \
+                        "--top %i " \
                         "--evalue 0.01 " \
                         "--threads %i " \
                         "--query-gencode %i " \
                         "%s " % (
+                            self._diamond_top,
                             self._num_threads,
                             self._translation_table,
                             diamond_taxonomy_assignment_performance_parameters)

@@ -564,17 +564,8 @@ class Condenser:
 
         os.makedirs("5_novelty/debug", exist_ok = True)
         
-        logging.info("Dumping best hits pre-demux")
-        genes_to_domains = kwargs["genes_to_domains"]
-        with open("5_novelty/debug/otu_hits.tsv", "w") as f:
-            debug_write_best_hits(sample_otus, genes_to_domains, f)
-        
         logging.info("Demultiplexing OTU best hits")
         demux_otus = self._demultiplex_best_hits(sample_otus)
-
-        logging.info("Dumping best hits post-demux")
-        with open("5_novelty/debug/demux_hits.tsv", "w") as f:
-            debug_write_best_hits(demux_otus, genes_to_domains, f)
 
         taxon_to_coverage = self._apply_tim_expectation_maximization_core(demux_otus, **kwargs)
 
@@ -701,7 +692,7 @@ class Condenser:
         
         return taxon_to_gene_to_descendent
     
-    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_to_domains, genes_per_domain):
+    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain):
 
         taxon_to_gene_to_descendent = self._find_descendents_with_missing_genes(sample_otus, genes_per_domain)
 
@@ -733,10 +724,6 @@ class Condenser:
                         taxon_to_coverage[best_hit_desc] = 1
 
             otu_to_taxon_to_prop.append(taxon_to_prop)
-        
-        logging.info("Dumping initial props")
-        with open("5_novelty/debug/props_initial.tsv", "w") as f:
-            debug_write_props(sample_otus, otu_to_taxon_to_prop, genes_to_domains, f)
 
         if len(taxon_to_coverage) == 0: return None
         
@@ -786,10 +773,6 @@ class Condenser:
             need_another_iteration = max_coef_change > 0.001
             if not need_another_iteration:
                 break
-        
-        logging.info("Dumping final props")
-        with open("5_novelty/debug/props_final.tsv", "w") as f:
-            debug_write_props(sample_otus, next_otu_to_taxon_to_prop, genes_to_domains, f)
         
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
@@ -1296,7 +1279,7 @@ class CondensedCommunityProfileKronaWriter:
         for f in sample_tempfiles:
             f.close()
 
-def debug_write_props(sample_otus, otu_to_taxon_to_props, genes_to_domains, f):
+def debug_write_props(sample_otus, otu_to_taxon_to_props, genes_per_domains, f):
     #[{taxon -> prop}]
     num_otus = len(otu_to_taxon_to_props)
     taxon_to_otu_to_prop = {"marker": [""] * num_otus,
@@ -1319,7 +1302,7 @@ def debug_write_props(sample_otus, otu_to_taxon_to_props, genes_to_domains, f):
         f.write("\t".join(row))
         f.write("\n")
 
-def debug_write_best_hits(sample_otus, genes_to_domains, f):
+def debug_write_best_hits(sample_otus, genes_per_domain, f):
     sample_otus = list(sample_otus)
     num_otus = len(sample_otus)
     taxon_to_otu_to_hit = {"marker": [""] * num_otus,

@@ -48,7 +48,7 @@ except ImportError:
 
 class Tests(unittest.TestCase):
     headers = str.split('gene sample sequence num_hits coverage taxonomy')
-    headers_with_extras = headers + str.split('read_names nucleotides_aligned taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method')
+    headers_with_extras = headers + str.split('read_names nucleotides_aligned taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method good_taxonomies')
     maxDiff = None
     two_packages = '%s %s' % (
         os.path.join(path_to_data, '4.11.22seqs.gpkg.spkg'),
@@ -931,8 +931,52 @@ TTCAGCTGCACGACGTACCATAGTGTTTTTGTATACTTTATACTCAACACCAGCTTCACGTAATTGTGAACGTAAGTCAG
         # more frequently)
         expected = [
             "\t".join(self.headers_with_extras),
-            'S1.12.ribosomal_protein_S12_S23		CGTGGTGTCTGCACCCGGGTGTACACCACCACCCGAAGA---------AGCCGAACTCGG	1	1.50	Root; d__Bacteria; p__Actinobacteria; c__Acidimicrobiia; o__Microtrichales; f__TK06; g__MedAcidi-G3; s__MedAcidi-G3_sp4	A00178:38:H5NYYDSXX:2:1552:32524:1517	51	False	CGGGATGTAGGCAGTGACCTCCACGCCTGAGGAGAGCCGGACGCGTGCGACCTTGCGCAACGCCGAGTTCGGCTTCTTCGGGTGGTGGTGTACACCCGGGTGCAGACACCACGGCGCTGGGGCGAACCCTTGAGCGCAGGGGTGTTGGTCT	[\'GCA_000817105.1\']	diamond',
-            '']
+            "\t".join([
+                'S1.12.ribosomal_protein_S12_S23',
+                '',
+                'CGTGGTGTCTGCACCCGGGTGTACACCACCACCCGAAGA---------AGCCGAACTCGG', '1', 
+                "1.50", 
+                "Root; d__Bacteria; p__Actinobacteria; c__Acidimicrobiia; o__Microtrichales; f__TK06; g__MedAcidi-G3; s__MedAcidi-G3_sp4", 
+                "A00178:38:H5NYYDSXX:2:1552:32524:1517", 
+                "51", 
+                "False", 
+                "CGGGATGTAGGCAGTGACCTCCACGCCTGAGGAGAGCCGGACGCGTGCGACCTTGCGCAACGCCGAGTTCGGCTTCTTCGGGTGGTGGTGTACACCCGGGTGCAGACACCACGGCGCTGGGGCGAACCCTTGAGCGCAGGGGTGTTGGTCT", 
+                "[\'GCA_000817105.1\']", 
+                "diamond",
+                "".join([
+                    "[\'GCA_000192415.1\', \'GCA_000745515.1\', \'GCA_001603275.1\', "
+                    "\'GCA_900094885.1\', \'GCA_900101045.1\', \'GCA_900103935.1\', \'GCA_900105065.1\', "
+                    "\'GCA_900105785.1\', \'GCA_900110855.1\', \'GCA_900112345.1\', \'GCA_000015265.1\', "
+                    "\'GCA_000159015.1\', \'GCA_000191785.1\', \'GCA_000204235.2\', \'GCA_000217655.1\', "
+                    "\'GCA_000218545.1\', \'GCA_000269605.1\', \'GCA_000364605.1\', \'GCA_000376885.1\', "
+                    "\'GCA_000389985.1\', \'GCA_000421525.1\', \'GCA_000466305.1\', \'GCA_000519005.1\', "
+                    "\'GCA_000612055.1\', \'GCA_000619965.1\', \'GCA_000620705.1\', \'GCA_000708885.1\', "
+                    "\'GCA_000737845.1\', \'GCA_000738005.1\', \'GCA_000770925.1\', \'GCA_000771165.1\', "
+                    "\'GCA_000785495.1\', \'GCA_001423135.1\', \'GCA_001425025.1\', \'GCA_001427545.1\', "
+                    "\'GCA_001428125.1\', \'GCA_001428565.1\', \'GCA_001428725.1\', \'GCA_001428765.1\', "
+                    "\'GCA_001653335.1\', \'GCA_001808405.1\', \'GCA_002127695.1\', \'GCA_900092135.1\', "
+                    "\'GCA_900103275.1\', \'GCA_900104965.1\', \'GCA_900105865.1\', \'GCA_900107735.1\', "
+                    "\'GCA_900111365.1\', \'GCA_900163845.1\', \'GCA_000022965.1\', \'GCA_000158015.1\', "
+                    "\'GCA_000162895.1\', \'GCA_000163595.1\', \'GCA_000168715.1\', \'GCA_000277715.1\', "
+                    "\'GCA_000296505.1\', \'GCA_000312005.1\', \'GCA_000318335.2\', \'GCA_000341145.1\', "
+                    "\'GCA_000367205.1\', \'GCA_000411175.1\', \'GCA_000413315.1\', \'GCA_000420065.1\', "
+                    "\'GCA_000420425.1\', \'GCA_000420445.1\', \'GCA_000423465.1\', \'GCA_000425285.1\', "
+                    "\'GCA_000426605.1\', \'GCA_000429105.1\', \'GCA_000429245.1\', \'GCA_000466165.1\', "
+                    "\'GCA_000466185.1\', \'GCA_000472405.1\', \'GCA_000477715.1\', \'GCA_000504285.1\', "
+                    "\'GCA_000576595.1\', \'GCA_000720035.1\', \'GCA_000720335.1\', \'GCA_000724605.1\', "
+                    "\'GCA_000741285.1\', \'GCA_000758755.1\', \'GCA_000775415.1\', \'GCA_000826065.1\', "
+                    "\'GCA_000826085.1\', \'GCA_000975155.1\', \'GCA_001025035.1\', \'GCA_001025155.1\', "
+                    "\'GCA_001059235.1\', \'GCA_001294605.1\', \'GCA_001420975.1\', \'GCA_001441165.1\', "
+                    "\'GCA_001552135.1\', \'GCA_001553565.1\', \'GCA_001678905.1\', \'GCA_001685165.1\', "
+                    "\'GCA_001687305.1\', \'GCA_001693815.1\', \'GCA_001698125.1\', \'GCA_001758225.1\', "
+                    "\'GCA_001814535.1\', \'GCA_001854805.1\', \'GCA_001856685.1\', \'GCA_001907235.1\', "
+                    "\'GCA_001907275.1\', \'GCA_001907295.1\', \'GCA_001936115.1\', \'GCA_001956895.1\', "
+                    "\'GCA_001997345.1\', \'GCA_001998325.1\', \'GCA_002072175.1\', \'GCA_002090055.1\', "
+                    "\'GCA_002090115.1\', \'GCA_002090155.1\', \'GCA_900119695.1\', \'GCA_900120415.1\', "
+                    "\'GCA_900155435.1\', \'GCA_900155645.1\']"
+                ])
+            ])
+        ]
         inseqs = '''>A00178:38:H5NYYDSXX:2:1552:32524:1517 1:N:0:CAACGGA+ATCCGTT
 CGGGATGTAGGCAGTGACCTCCACGCCTGAGGAGAGCCGGACGCGTGCGACCTTGCGCAACGCCGAGTTCGGCTTCTTCGGGTGGTGGTGTACACCCGGGTGCAGACACCACGGCGCTGGGGCGAACCCTTGAGCGCAGGGGTGTTGGTCT
 '''

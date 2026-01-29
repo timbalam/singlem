@@ -629,19 +629,19 @@ class Tests(unittest.TestCase):
                          not_found_otu_table_io.getvalue())
 
     def test_print_appraisal_archive_input_output(self):
-        version_4_fields = '"fields": ["gene", "sample", "sequence", "num_hits", "coverage", "taxonomy", "read_names", "nucleotides_aligned", "taxonomy_by_known?", "read_unaligned_sequences", "equal_best_hit_taxonomies", "taxonomy_assignment_method"]'
+        version_5_fields = '"fields": ["gene", "sample", "sequence", "num_hits", "coverage", "taxonomy", "read_names", "nucleotides_aligned", "taxonomy_by_known?", "read_unaligned_sequences", "equal_best_hit_taxonomies", "taxonomy_assignment_method", "good_taxonomies"]'
         alignment_shas = '"alignment_hmm_sha256s": ["4b0bf5b3d7fd2ca16e54eed59d3a07eab388f70f7078ac096bf415f1c04731d9", "4b0bf5b3d7fd2ca16e54eed59d3a07eab388f70f7078ac096bf415f1c04731d9", "4b0bf5b3d7fd2ca16e54eed59d3a07eab388f70f7078ac096bf415f1c04731d9", "4b0bf5b3d7fd2ca16e54eed59d3a07eab388f70f7078ac096bf415f1c04731d9"]'
         package_shas = '"singlem_package_sha256s": ["e4de3077fe4f7869ae1d9c49fc650c664153325fd2bc5997044c983dedd36a48", "e4de3077fe4f7869ae1d9c49fc650c664153325fd2bc5997044c983dedd36a48", "e4de3077fe4f7869ae1d9c49fc650c664153325fd2bc5997044c983dedd36a48", "e4de3077fe4f7869ae1d9c49fc650c664153325fd2bc5997044c983dedd36a48"]'
-        binned_otu = '["4.12.ribosomal_protein_L11_rplK", "minimal", "CCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTG", 4, 9.75609756097561, "Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales", ["HWI-ST1243:156:D1K83ACXX:7:1109:18214:9910", "HWI-ST1243:156:D1K83ACXX:7:1103:21187:63124", "HWI-ST1243:156:D1K83ACXX:7:1108:10813:6928", "HWI-ST1243:156:D1K83ACXX:7:1105:12385:81842"], [60, 60, 60, 60], false, ["ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA"], ["Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales"], "singlem_query_based"]'
-        unbinned_otu = '["4.11.ribosomal_protein_L10", "minimal", "TTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTA", 2, 4.878048780487805, "Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales; f__Staphylococcaceae; g__Staphylococcus", ["HWI-ST1243:156:D1K83ACXX:7:1106:18671:79482", "HWI-ST1243:156:D1K83ACXX:7:1105:19152:28331"], [60, 60], false, ["ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTACGTCGTGCAGCTGAA"], ["Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales; f__Staphylococcaceae; g__Staphylococcus"], "singlem_query_based"]'
+        binned_otu = '["4.12.ribosomal_protein_L11_rplK", "minimal", "CCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTG", 4, 9.75609756097561, "Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales", ["HWI-ST1243:156:D1K83ACXX:7:1109:18214:9910", "HWI-ST1243:156:D1K83ACXX:7:1103:21187:63124", "HWI-ST1243:156:D1K83ACXX:7:1108:10813:6928", "HWI-ST1243:156:D1K83ACXX:7:1105:12385:81842"], [60, 60, 60, 60], false, ["ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA"], ["Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales"], "singlem_query_based", null]'
+        unbinned_otu = '["4.11.ribosomal_protein_L10", "minimal", "TTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTA", 2, 4.878048780487805, "Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales; f__Staphylococcaceae; g__Staphylococcus", ["HWI-ST1243:156:D1K83ACXX:7:1106:18671:79482", "HWI-ST1243:156:D1K83ACXX:7:1105:19152:28331"], [60, 60], false, ["ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTACGTCGTGCAGCTGAA"], ["Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales; f__Staphylococcaceae; g__Staphylococcus"], "singlem_query_based", null]'
 
         metagenomes = "".join([
             '{',
             ", ".join([
-                '"version": 4',
+                '"version": 5',
                 alignment_shas,
                 package_shas,
-                version_4_fields,
+                version_5_fields,
                 "".join(['"otus": [', unbinned_otu, ',', binned_otu, ']']),
             ]),
             '}',
@@ -650,10 +650,10 @@ class Tests(unittest.TestCase):
         genomes = "".join([
             '{',
             ", ".join([
-                '"version": 4',
+                '"version": 5',
                 alignment_shas,
                 package_shas,
-                version_4_fields,
+                version_5_fields,
                 "".join(['"otus": [', binned_otu, ']']),
             ]),
             '}',
@@ -688,10 +688,10 @@ class Tests(unittest.TestCase):
         expected_found = "".join([
             '{',
             ", ".join([
-                '"version": 4',
+                '"version": 5',
                 alignment_shas,
                 package_shas,
-                version_4_fields,
+                version_5_fields,
                 "".join(['"otus": [', binned_otu, ']']),
             ]),
             '}',
@@ -700,10 +700,10 @@ class Tests(unittest.TestCase):
         expected_not_found = "".join([
             '{',
             ", ".join([
-                '"version": 4',
+                '"version": 5',
                 alignment_shas,
                 package_shas,
-                version_4_fields,
+                version_5_fields,
                 "".join(['"otus": [', unbinned_otu, ']']),
             ]),
             '}',
@@ -730,18 +730,18 @@ class Tests(unittest.TestCase):
             )
             extern.run(cmd)
 
-            version_4_fields = '"fields": ["gene", "sample", "sequence", "num_hits", "coverage", "taxonomy", "read_names", "nucleotides_aligned", "taxonomy_by_known?", "read_unaligned_sequences", "equal_best_hit_taxonomies", "taxonomy_assignment_method"]'
+            version_5_fields = '"fields": ["gene", "sample", "sequence", "num_hits", "coverage", "taxonomy", "read_names", "nucleotides_aligned", "taxonomy_by_known?", "read_unaligned_sequences", "equal_best_hit_taxonomies", "taxonomy_assignment_method", "good_taxonomies"]'
             alignment_shas = '"alignment_hmm_sha256s": ["4b0bf5b3d7fd2ca16e54eed59d3a07eab388f70f7078ac096bf415f1c04731d9", "4b0bf5b3d7fd2ca16e54eed59d3a07eab388f70f7078ac096bf415f1c04731d9", "4b0bf5b3d7fd2ca16e54eed59d3a07eab388f70f7078ac096bf415f1c04731d9", "4b0bf5b3d7fd2ca16e54eed59d3a07eab388f70f7078ac096bf415f1c04731d9"]'
             package_shas = '"singlem_package_sha256s": ["e4de3077fe4f7869ae1d9c49fc650c664153325fd2bc5997044c983dedd36a48", "e4de3077fe4f7869ae1d9c49fc650c664153325fd2bc5997044c983dedd36a48", "e4de3077fe4f7869ae1d9c49fc650c664153325fd2bc5997044c983dedd36a48", "e4de3077fe4f7869ae1d9c49fc650c664153325fd2bc5997044c983dedd36a48"]'
-            binned_otu = '["4.12.ribosomal_protein_L11_rplK", "minimal", "GGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGAACATC", 4, 9.75609756097561, "Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales", ["HWI-ST1243:156:D1K83ACXX:7:1109:18214:9910", "HWI-ST1243:156:D1K83ACXX:7:1103:21187:63124", "HWI-ST1243:156:D1K83ACXX:7:1108:10813:6928", "HWI-ST1243:156:D1K83ACXX:7:1105:12385:81842"], [60, 60, 60, 60], false, ["ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA"], ["Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales"], "singlem_query_based"]'
-            unbinned_otu = '["4.11.ribosomal_protein_L10", "minimal", "TTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTA", 2, 4.878048780487805, "Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales; f__Staphylococcaceae; g__Staphylococcus", ["HWI-ST1243:156:D1K83ACXX:7:1106:18671:79482", "HWI-ST1243:156:D1K83ACXX:7:1105:19152:28331"], [60, 60], false, ["ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTACGTCGTGCAGCTGAA"], ["Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales; f__Staphylococcaceae; g__Staphylococcus"], "singlem_query_based"]'
+            binned_otu = '["4.12.ribosomal_protein_L11_rplK", "minimal", "GGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGAACATC", 4, 9.75609756097561, "Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales", ["HWI-ST1243:156:D1K83ACXX:7:1109:18214:9910", "HWI-ST1243:156:D1K83ACXX:7:1103:21187:63124", "HWI-ST1243:156:D1K83ACXX:7:1108:10813:6928", "HWI-ST1243:156:D1K83ACXX:7:1105:12385:81842"], [60, 60, 60, 60], false, ["ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA", "ATTAACAGTAGCTGAAGTTACTGACCCTGCAGGTAAAGCGAATCCAGCACCACCAGTTGGTCCAGCATTAGGTCAAGCAGGTGTGCGTCGTGCAGCTGAA"], ["Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales"], "singlem_query_based", null]'
+            unbinned_otu = '["4.11.ribosomal_protein_L10", "minimal", "TTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTA", 2, 4.878048780487805, "Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales; f__Staphylococcaceae; g__Staphylococcus", ["HWI-ST1243:156:D1K83ACXX:7:1106:18671:79482", "HWI-ST1243:156:D1K83ACXX:7:1105:19152:28331"], [60, 60], false, ["ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTACGTCGTGCAGCTGAA"], ["Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Bacillales; f__Staphylococcaceae; g__Staphylococcus"], "singlem_query_based", null]'
             expected_found = "".join([
                 '{',
                 ", ".join([
-                    '"version": 4',
+                    '"version": 5',
                     alignment_shas,
                     package_shas,
-                    version_4_fields,
+                    version_5_fields,
                     "".join(['"otus": [', binned_otu, ']']),
                 ]),
                 '}',
@@ -750,10 +750,10 @@ class Tests(unittest.TestCase):
             expected_not_found = "".join([
                 '{',
                 ", ".join([
-                    '"version": 4',
+                    '"version": 5',
                     alignment_shas,
                     package_shas,
-                    version_4_fields,
+                    version_5_fields,
                     "".join(['"otus": [', unbinned_otu, ']']),
                 ]),
                 '}',
