@@ -930,8 +930,8 @@ TTCAGCTGCACGACGTACCATAGTGTTTTTGTATACTTTATACTCAACACCAGCTTCACGTAATTGTGAACGTAAGTCAG
         # Read finds 2 ORFs, pretty rare for reads (but happens for genomes
         # more frequently)
         expected = [
-            "\t".join(self.headers_with_extras),
-            "\t".join([
+            self.headers_with_extras,
+            [
                 'S1.12.ribosomal_protein_S12_S23',
                 '',
                 'CGTGGTGTCTGCACCCGGGTGTACACCACCACCCGAAGA---------AGCCGAACTCGG', '1', 
@@ -975,7 +975,7 @@ TTCAGCTGCACGACGTACCATAGTGTTTTTGTATACTTTATACTCAACACCAGCTTCACGTAATTGTGAACGTAAGTCAG
                     "\'GCA_002090115.1\', \'GCA_002090155.1\', \'GCA_900119695.1\', \'GCA_900120415.1\', "
                     "\'GCA_900155435.1\', \'GCA_900155645.1\']"
                 ])
-            ])
+            ]
         ]
         inseqs = '''>A00178:38:H5NYYDSXX:2:1552:32524:1517 1:N:0:CAACGGA+ATCCGTT
 CGGGATGTAGGCAGTGACCTCCACGCCTGAGGAGAGCCGGACGCGTGCGACCTTGCGCAACGCCGAGTTCGGCTTCTTCGGGTGGTGGTGTACACCCGGGTGCAGACACCACGGCGCTGGGGCGAACCCTTGAGCGCAGGGGTGTTGGTCT
@@ -989,7 +989,7 @@ CGGGATGTAGGCAGTGACCTCCACGCCTGAGGAGAGCCGGACGCGTGCGACCTTGCGCAACGCCGAGTTCGGCTTCTTCG
                 n.name,
                 os.path.join(path_to_data, 'S1.12.ribosomal_protein_S12_S23.gpkg.spkg'))
             self.assertEqualOtuTable(
-                list([line.split("\t") for line in expected]),
+                [line for line in expected],
                 extern.run(cmd).replace(os.path.basename(n.name).replace('.fa',''),''))
 
     def test_split_genes(self):

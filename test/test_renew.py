@@ -26,6 +26,8 @@ import unittest
 import os.path
 import extern
 import sys
+import tempfile
+import json
 
 path_to_script = 'singlem'
 path_to_data = os.path.join(os.path.dirname(os.path.realpath(__file__)),'data')
@@ -37,6 +39,7 @@ from singlem.renew import Renew
 
 class Tests(unittest.TestCase):
     headers = str.split('gene sample sequence num_hits coverage taxonomy')
+    headers_with_extras = headers + str.split('read_names nucleotides_aligned taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method good_taxonomies')
     maxDiff = None
     two_packages = '%s %s' % (
         os.path.join(path_to_data, '4.11.22seqs.gpkg.spkg'),
@@ -81,6 +84,18 @@ class Tests(unittest.TestCase):
             'inseqs	2.44	Root; d__Bacteria; p__Firmicutes; c__Clostridia; o__Clostridiales; f__Lachnospiraceae; g__[Lachnospiraceae_bacterium_NK4A179]\n'
         self.assertEqual(expected, output)
 
+    def test_output_archive_naive_then_diamond_old_version4(self):
+        with tempfile.NamedTemporaryFile() as tf:
+            cmd = f"{path_to_script} renew --input-archive-otu-table {path_to_data}/inseqs.fast_protein.json --metapackage {path_to_data}/4.11.22seqs.gpkg.spkg.smpkg/ --archive-otu-table {tf.name} --assignment-method smafa_naive_then_diamond".format(
+                path_to_script,
+                path_to_data,
+                path_to_data)
+            extern.run(cmd)
+            with open(tf.name) as f:
+                observed = json.load(f)
+                with open(f'{path_to_data}/inseqs.fast_proteinv5.assign_taxonomy.json') as f:
+                    expected = json.load(f)
+                    self.assertEqual(observed, expected)
 
     def assertEqualOtuTable(self, expected_array, observed_string):
         observed_array = list([line.split("\t") for line in observed_string.split("\n")])
