@@ -31,6 +31,7 @@ class Renew:
         exclude_off_target_hits = kwargs.pop('exclude_off_target_hits')
         max_species_divergence = kwargs.pop('max_species_divergence')
         ignore_missing_singlem_packages = kwargs.pop('ignore_missing_singlem_packages')
+        diamond_top = kwargs.pop('diamond_top')
 
         logging.info("Acquiring singlem packages ..")
         metapackage = SearchPipe()._parse_packages_or_metapackage(**kwargs)
@@ -160,6 +161,7 @@ class Renew:
             pipe._filter_minimum_protein = filter_minimum_protein
             pipe._translation_table = translation_table
             pipe._max_species_divergence = max_species_divergence
+            pipe._diamond_top = diamond_top
 
             logging.info("Running taxonomy assignment and post-processing ..")
             otu_table_object = pipe.assign_taxonomy_and_process(

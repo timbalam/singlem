@@ -146,6 +146,7 @@ def main():
             exclude_off_target_hits = args.exclude_off_target_hits,
             min_taxon_coverage = get_min_taxon_coverage(args),
             max_species_divergence = args.max_species_divergence,
+            diamond_top = args.diamond_top
         )
 
     elif args.subparser_name=='renew':
@@ -173,6 +174,7 @@ def main():
             exclude_off_target_hits = args.exclude_off_target_hits,
             translation_table = args.translation_table,
             max_species_divergence = args.max_species_divergence,
+            diamond_top = args.diamond_top
             )
 
     elif args.subparser_name == 'condense':

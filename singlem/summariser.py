@@ -392,6 +392,7 @@ class Summariser:
                     with gzip.open(a.strip()) as g:
                         overall_df, ar = read_archive_table(overall_df, g, ar)
         df = overall_df
+        version = ar.version
 
         # Remove suffixes
         if set_sample_name is None:
@@ -409,8 +410,8 @@ class Summariser:
             raise Exception("Multiple taxonomy_by_known found: {}".format(', '.join(df['taxonomy_by_known'].unique())))
 
         def combine_rows(grouped1):
-            grouped = grouped1.reset_index()
-            max_row = grouped['num_hits'].idxmax()
+            grouped = grouped1
+            max_row = grouped['num_hits'].values.argmax()
             if set_sample_name:
                 sample = set_sample_name
             else:
@@ -424,10 +425,10 @@ class Summariser:
                 equal_best_hit_taxonomies = None
             else:
                 raise Exception("Unexpected tax assignment method: {}".format(tax_assignment_method))
-            return pd.DataFrame({
-                'gene':[grouped.iloc[0]['gene']],
+            data = {
+                #'gene':[grouped.iloc[0]['gene']],
                 'sample':[sample],
-                'sequence':[grouped.iloc[0]['sequence']],
+                #'sequence':[grouped.iloc[0]['sequence']],
                 'num_hits':[sum(grouped['num_hits']),],
                 'coverage':[sum(grouped['coverage']),],
                 'taxonomy':[grouped.iloc[max_row]['taxonomy']],
@@ -436,9 +437,24 @@ class Summariser:
                 'taxonomy_by_known?':[grouped.iloc[0]['taxonomy_by_known?']],
                 'read_unaligned_sequences':[list(itertools.chain(*grouped['read_unaligned_sequences']))],
                 'equal_best_hit_taxonomies':[equal_best_hit_taxonomies],
-                'taxonomy_assignment_method':[tax_assignment_method],
-            })
-        transformed = df.groupby(['sequence','gene'], as_index=False).apply(combine_rows)[ArchiveOtuTable.FIELDS]
+                'taxonomy_assignment_method':[tax_assignment_method]
+            }
+            if version == 5:
+                if tax_assignment_method == QUERY_BASED_ASSIGNMENT_METHOD:
+                    good_taxonomies = grouped.iloc[0]['good_taxonomies']
+                elif tax_assignment_method == DIAMOND_ASSIGNMENT_METHOD:
+                    good_taxonomies = [g for g in grouped['good_taxonomies'] if g is not None]
+                    good_taxonomies = (
+                        list(itertools.chain(*good_taxonomies))
+                        if len(good_taxonomies) > 0
+                        else None
+                    )
+                elif tax_assignment_method == None or tax_assignment_method == NO_ASSIGNMENT_METHOD:
+                    good_taxonomies = None
+                data['good_taxonomies'] = [good_taxonomies]
+            return pd.DataFrame(data)
+
+        transformed = df.groupby(['sequence','gene'], as_index=True).apply(combine_rows).reset_index()[ar.fields]
         logging.info("Collapsed {} total OTUs into {} output OTUs".format(len(df), len(transformed)))
 
         logging.debug("Writing output table ..")

@@ -170,25 +170,22 @@ class QueryTaxonomicAssignmentResult:
             else:
                 return {}
         if self._analysing_pairs:
-            return (
-                [{
-                    name: self._lca_taxonomy(best_good_taxonomies[0])
-                    for (name, best_good_taxonomies) in name_to_taxonomies.items()
-                } for name_to_taxonomies in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name]]
-                if sample_name in self._spkg_to_sample_to_name_to_taxonomies[spkg_key]
-                else [{}, {}]
-            )
+            try:
+                return [
+                    {k: self._lca_taxonomy(v[0])
+                     for (k, v) in name_to_taxonomies.items()}
+                    for name_to_taxonomies in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name]
+                ]
+            except KeyError:
+                return [{}, {}]
         else:
             # In case where there are multiple samples, sample might not be in
             # each hash, so avoid a KeyError here.
-            return (
-                {
-                name: self._lca_taxonomy(best_good_taxonomies[0])
-                for (name, best_good_taxonomies) in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name].items()
-                }
-                if sample_name not in self._spkg_to_sample_to_name_to_taxonomies[spkg_key]
-                else {}
-            )
+            try:
+                return {k: self._lca_taxonomy(v[0])
+                        for (k, v) in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name].items()}
+            except KeyError:
+                return {}
 
     def get_equal_best_hits(self, singlem_package, sample_name, good_hits = False):
         """ Return dict of read name to list of all equal-best taxonomic hits (or list of 2 dicts for paired reads) """

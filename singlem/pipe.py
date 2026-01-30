@@ -926,8 +926,6 @@ class SearchPipe:
                 self.known_sequence_taxonomies = []
                 self.good_taxonomies = []
 
-        import pdb; pdb.set_trace()
-
         seq_to_collected_info = {}
         for s in sequences:
             if s.aligned_sequence in otu_sequence_assigned_taxonomies or \
@@ -952,8 +950,7 @@ class SearchPipe:
                     try:
                         equal_best_tax = per_read_equal_best_taxonomies[s.name]
 
-                        otu_taxonomy_assignment_method = taxonomy_assignment_methods.get_assignment_method(s.name)
-                        if otu_taxonomy_assignment_method in (
+                        if assignment_method in (
                             DIAMOND_ASSIGNMENT_METHOD,
                             SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD
                         ):
@@ -1915,7 +1912,7 @@ class DiamondTaxonomicAssignmentResult:
             elif good_hits:
                 return equal_best_hits
             else:
-                return {k:v[0] for (k, v) in equal_good_hits}
+                return {k:v[0] for (k, v) in equal_best_hits.items()}
         else:
             # When no seqs are assigned taxonomy by diamond
             if self._analysing_pairs:

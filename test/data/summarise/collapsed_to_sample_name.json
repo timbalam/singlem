@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "alignment_hmm_sha256s": [
     "dc272d31284f392bdc15158c1ff1e2b1c68361adc5122ec8890f89b51c44f6a0",
     "8f5432a192cadc1f23f5dc55c2de4cfc8bb0fe8611968bc1de06041f28e3c9c5",
@@ -134,7 +134,8 @@
     "taxonomy_by_known?",
     "read_unaligned_sequences",
     "equal_best_hit_taxonomies",
-    "taxonomy_assignment_method"
+    "taxonomy_assignment_method",
+    "good_taxonomies"
   ],
   "otus": [
     [
@@ -165,7 +166,8 @@
         "Root; d__Bacteria;p__Pseudomonadota;c__Alphaproteobacteria;o__Rhizobiales;f__Beijerinckiaceae;g__JAFAME01;s__JAFAME01 sp019233695",
         "Root; d__Bacteria;p__Pseudomonadota;c__Alphaproteobacteria;o__Rhizobiales;f__Beijerinckiaceae;g__Roseiarcus;s__Roseiarcus fermentans"
       ],
-      "singlem_query_based"
+      "singlem_query_based",
+      null
     ],
     [
       "S3.42.RNA_pol_A_bac",
@@ -210,7 +212,8 @@
           "RNA_pol_A_bac~GB_GCA_943357975.1"
         ]
       ],
-      "diamond"
+      "diamond",
+      null
     ]
   ]
 }

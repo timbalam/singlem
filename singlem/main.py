@@ -174,6 +174,9 @@ def add_less_common_pipe_arguments(argument_group, extra_args=False):
                                 metavar='FLOAT',
                                 help='Minimum coverage to report in a taxonomic profile. [default: {} for reads, {} for genomes]'.format(CONDENSE_DEFAULT_MIN_TAXON_COVERAGE, CONDENSE_DEFAULT_GENOME_MIN_TAXON_COVERAGE),
                                 type=float)
+    argument_group.add_argument('--diamond-top', metavar='INT',
+                                help='Consider hit reads within this percentage of the best diamond hit when assigning diamond taxonomy. [default: %i]' % SearchPipe.DEFAULT_DIAMOND_TOP,
+                                type=int, default=SearchPipe.DEFAULT_DIAMOND_TOP)
     
     if extra_args:
         argument_group.add_argument('--working-directory', metavar='directory', help='use intermediate working directory at a specified location, and do not delete it upon completion [default: not set, use a temporary directory]')
@@ -807,7 +810,8 @@ def main():
             viral_profile_output = False,
             exclude_off_target_hits = args.exclude_off_target_hits,
             min_taxon_coverage = get_min_taxon_coverage(args),
-            max_species_divergence = args.max_species_divergence
+            max_species_divergence = args.max_species_divergence,
+            diamond_top = args.diamond_top
         )
 
     elif args.subparser_name=='renew':
@@ -834,7 +838,8 @@ def main():
             output_taxonomic_profile_krona = args.taxonomic_profile_krona,
             exclude_off_target_hits = args.exclude_off_target_hits,
             translation_table = args.translation_table,
-            max_species_divergence = args.max_species_divergence
+            max_species_divergence = args.max_species_divergence,
+            diamond_top = args.diamond_top
             )
 
     elif args.subparser_name == 'summarise':
