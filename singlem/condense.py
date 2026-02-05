@@ -214,9 +214,10 @@ class Condenser:
         # Step 1: Gather dictionary of sequence IDs to taxon strings
         for otu in sample_otus:
             if otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD:
-                for seq_id_list in otu.equal_best_hit_taxonomies():
-                    for seq_id in seq_id_list:
-                        sequence_ids.add(seq_id)
+                for lists in (otu.equal_best_hit_taxonomies(), otu.good_taxonomies()):
+                    for seq_id_list in lists:
+                        for seq_id in seq_id_list:
+                            sequence_ids.add(seq_id)
 
         # Step 2: Get taxon strings
         sequence_id_to_taxon = metapackage.get_taxonomy_of_reads(sequence_ids)
@@ -240,11 +241,31 @@ class Condenser:
                                 # equal-best to Euk
                                 logging.debug("Ignoring equal-best hit Eukaryotic taxon {}".format(taxon_name))
                                 continue
-                        # Record only to genus level
                         if taxon_name[0] != 'Root':
                             taxon_name = ['Root']+taxon_name
+                        # Record only to genus level
                         possible_names.add(';'.join(taxon_name[:-1]))
                 otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = list(possible_names)
+                
+                # Same for good hits
+                possible_names = set()
+                for seq_id_list in otu.good_taxonomies():
+                    for seq_id in seq_id_list:
+                        taxon_name = sequence_id_to_taxon[seq_id]
+                        if not taxon_name[-2].startswith('g__'):
+                            if not taxon_name[0] == 'd__Eukaryota':
+                                raise Exception("Expected genus level taxon, but found {}, from ID {}".format(taxon_name, seq_id))
+                            else:
+                                # This can happen when taxonomy is overall
+                                # Archaea so not previously filtered out, but
+                                # equal-best to Euk
+                                logging.debug("Ignoring equal-best hit Eukaryotic taxon {}".format(taxon_name))
+                                continue
+                        if taxon_name[0] != 'Root':
+                            taxon_name = ['Root']+taxon_name
+                        # Record only to genus level
+                        possible_names.add(';'.join(taxon_name[:-1]))
+                otu.data[ArchiveOtuTable.GOOD_TAXONOMIES_FIELD_INDEX] = list(possible_names)
                 num_otus_changed += 1
         logging.info("Converted {} Diamond-assigned OTU taxon_ids to taxon strings".format(num_otus_changed))
 
@@ -642,17 +663,18 @@ class Condenser:
 
         return CondensedCommunityProfile(sample, sample_summary_root_node)
 
-    def _find_descendents_with_missing_genes(self, sample_otus, genes_per_domain):
+    def _find_missing_genes(self, sample_otus, genes_per_domain):
         ''' Return a nested dict {taxon->{gene->set(taxon)}}
             mapping ancestor taxons to genes to lists of descendents taxa
             which are missing the gene.
         '''
 
-        # Ideally, we expect that for a taxon that exists in a sample,
-        # for each gene targetting the domain of the taxon either:
-        # - the taxon will be the best hit, or
-        # - an ancestor taxon will be the best hit
-        #   (if gene is conserved at a higher rank).
+        # A taxon that exists in a sample may share genes
+        # with closely related taxons in the database,
+        # if the gene is conserved at a higher rank.
+        # In this case we may see one or more equal best hit
+        # taxons for a gene, but without best hits
+        # for most other genes.
         # Here we find for all taxa that are a best hit for some OTU,
         # which other genes (that target the domain of the taxon)
         # don't also have a best hit for the taxon.
@@ -668,32 +690,9 @@ class Condenser:
                         taxon_to_missing_genes[clean_tax] = set(genes_per_domain[clean_tax.split(';')[1].strip().replace('d__','')])
                     taxon_to_missing_genes[clean_tax].discard(otu.marker)
         
-        # For taxa with 'missing' genes we can try to associate
-        # an OTU for which an ancestor taxon is best hit.
-        taxon_to_gene_to_descendent = {} # {taxon -> {marker -> set(taxon)}}
-        for tax, genes in taxon_to_missing_genes.items():
-            genes_still_missing = genes
-            for anc in TaxonomyUtils.ancestor_taxonomies(tax):
-                if len(genes_still_missing) == 0:
-                    break
-                if anc in taxon_to_missing_genes:
-                    anc_genes_not_missing = genes_still_missing - taxon_to_missing_genes[anc]
-                    if len(anc_genes_not_missing) == 0:
-                        continue
-                    if anc not in taxon_to_gene_to_descendent:
-                        taxon_to_gene_to_descendent[anc] = {}
-                    for anc_gene in anc_genes_not_missing:
-                        if anc_gene not in taxon_to_gene_to_descendent[anc]:
-                            taxon_to_gene_to_descendent[anc][anc_gene] = set()
-                        taxon_to_gene_to_descendent[anc][anc_gene].add(tax)
-                    
-                    genes_still_missing = genes_still_missing & taxon_to_missing_genes[anc]
-        
-        return taxon_to_gene_to_descendent
+        return taxon_to_missing_genes
     
     def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain):
-
-        taxon_to_gene_to_descendent = self._find_descendents_with_missing_genes(sample_otus, genes_per_domain)
 
         # Set up initial conditions. The coverage of each species is set to 1
         taxon_to_coverage = {}
@@ -701,26 +700,20 @@ class Condenser:
         for otu in sample_otus:
             taxon_to_prop = {}
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
-            if best_hit_taxonomies is not None and (
-                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
-                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
+            if (
+                    best_hit_taxonomies is not None
+                    and otu.taxonomy_assignment_method()
+                    in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)
                     ):
                 
-                # initialise OTU for best hit taxa and descendents
-                # which had no best hit for this gene
-                best_hit_descendents = set()
+                # initialise OTU for best hit taxa.
+                # TODO: Map taxa with missing genes to ancestors somehow?
                 for best_hit_tax in best_hit_taxonomies:
                     clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
-                    best_hit_descendents.add(clean_tax)
-                    if clean_tax in taxon_to_gene_to_descendent:
-                        if otu.marker in taxon_to_gene_to_descendent[clean_tax]:
-                            best_hit_descendents.update(taxon_to_gene_to_descendent[clean_tax][otu.marker])
-                
-                for best_hit_desc in best_hit_descendents:
-                    if best_hit_desc not in taxon_to_prop:
-                        taxon_to_prop[best_hit_desc] = 1
-                    if best_hit_desc not in taxon_to_coverage:
-                        taxon_to_coverage[best_hit_desc] = 1
+                    if clean_tax not in taxon_to_prop:
+                        taxon_to_prop[clean_tax] = 1
+                    if clean_tax not in taxon_to_coverage:
+                        taxon_to_coverage[clean_tax] = 1
 
             otu_to_taxon_to_prop.append(taxon_to_prop)
 
@@ -1277,89 +1270,3 @@ class CondensedCommunityProfileKronaWriter:
         extern.run(cmd)
         for f in sample_tempfiles:
             f.close()
-
-
-def debug_write_archive(archive_otu_tables, metapackage_path, output_dir):
-
-    from singlem.otu_table_collection import StreamingOtuTableCollection
-
-    otus = StreamingOtuTableCollection()
-    if archive_otu_tables:
-        for o in archive_otu_tables:
-            otus.add_archive_otu_table_file(o.strip())
-    
-    if metapackage_path:
-        logging.info("Using the metapackage at {}".format(metapackage_path))
-        metapackage = Metapackage.acquire(metapackage_path)
-    elif not metapackage:
-        # Neither were specified, so use the default set of packages
-        logging.info("Using default SingleM metapackage")
-        metapackage = Metapackage.acquire_default()
-    
-    if metapackage.version < 3:
-        raise Exception("Condense function now only works with version 3+ metapackages.")
-
-    markers = {} # set of markers used to the domains they target
-    
-    for spkg in metapackage.singlem_packages:
-        # ensure v3 packages
-        if not spkg.version in [3,4]:
-            raise Exception("Only works with v3 or v4 singlem packages.")
-        marker_name = spkg.graftm_package_basename()
-        markers[marker_name] = spkg.target_domains()
-    
-    os.makedirs(output_dir, exists_ok = True)
-    for sample, sample_otus in otus.each_sample_otus(generate_archive_otu_table=True):
-
-        with(open(f"output_dir/{sample}_hits.tsv")) as f:
-            debug_write_best_hits(sample_otus, markers, f)
-
-    
-    def debug_write_props(sample_otus, otu_to_taxon_to_props, genes_to_domains, f):
-        #[{taxon -> prop}]
-        num_otus = len(otu_to_taxon_to_props)
-        taxon_to_otu_to_prop = {"marker": [""] * num_otus,
-                                "domain": [""] * num_otus,
-                                #"sequence": [""] * num_otus,
-                                "coverage": ["0"] * num_otus}
-        for i, (otu, taxon_to_props) in enumerate(zip(sample_otus, otu_to_taxon_to_props)):
-            taxon_to_otu_to_prop["marker"][i] = otu.marker
-            taxon_to_otu_to_prop["domain"][i] = ";".join(genes_to_domains[otu.marker])
-            #taxon_to_otu_to_prop["sequence"][i] = otu.sequence
-            taxon_to_otu_to_prop["coverage"][i] = f"{otu.coverage:.3}"
-            for tax, prop in taxon_to_props.items():
-                if tax not in taxon_to_otu_to_prop:
-                    taxon_to_otu_to_prop[tax] = ["0"] * num_otus
-                taxon_to_otu_to_prop[tax][i] = f"{float(prop):.3}"
-        
-        f.write("\t".join(taxon_to_otu_to_prop.keys()))
-        f.write("\n")
-        for row in zip(*taxon_to_otu_to_prop.values()):
-            f.write("\t".join(row))
-            f.write("\n")
-
-    def debug_write_best_hits(sample_otus, genes_to_domains, f):
-        sample_otus = list(sample_otus)
-        num_otus = len(sample_otus)
-        taxon_to_otu_to_hit = {"marker": [""] * num_otus,
-                            "domain": [""] * num_otus,
-                            #"sequence": [""] * num_otus,
-                            "coverage": ["0"] * num_otus}
-        for i, otu in enumerate(sample_otus):
-            taxon_to_otu_to_hit["marker"][i] = otu.marker
-            taxon_to_otu_to_hit["domain"][i] = ";".join(genes_to_domains[otu.marker])
-            #taxon_to_otu_to_hit["sequence"][i] = otu.sequence
-            taxon_to_otu_to_hit["coverage"][i] = f"{otu.coverage:.3}"
-            for best_hit_tax in otu.equal_best_hit_taxonomies():
-                if best_hit_tax not in taxon_to_otu_to_hit:
-                    taxon_to_otu_to_hit[best_hit_tax] = ["0"] * num_otus
-                taxon_to_otu_to_hit[best_hit_tax][i] = "1"
-        
-        f.write("\t".join(taxon_to_otu_to_hit.keys()))
-        f.write("\n")
-        for row in zip(*taxon_to_otu_to_hit.values()):
-            f.write("\t".join(row))
-            f.write("\n")
-
-
-
