@@ -244,21 +244,21 @@ class Tests(unittest.TestCase):
             Condenser()._demultiplex_best_hits(otus).data
         )
         
-    def test_find_descendents_with_missing_genes_none_missing(self):
+    def test_find_missing_genes_none_missing(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
             ['g2', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
         ]
-        genes_per_domain = {'Bacteria': ['g1']}
-        expected = {}
+        genes_per_domain = {'Bacteria': ['g1', 'g2']}
+        expected = {'Root; d__Bacteria; p; c; o; f; gen1; tax1': set()}
         self.assertEqual(
             expected,
-            Condenser()._find_descendents_with_missing_genes(otus, genes_per_domain)
+            Condenser()._find_missing_genes(otus, genes_per_domain)
         )
         
-    def test_find_descendents_with_missing_genes_1gene1(self):
+    def test_find_missing_genes_1gene1(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
@@ -266,10 +266,10 @@ class Tests(unittest.TestCase):
             ['g2', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1'],QUERY_BASED_ASSIGNMENT_METHOD],
         ]
         genes_per_domain = {'Bacteria': ['g1', 'g2']}
-        expected = {'Root; d__Bacteria; p; c; o; f; gen1': {'g2': {'Root; d__Bacteria; p; c; o; f; gen1; tax1'}}}
+        expected = {'Root; d__Bacteria; p; c; o; f; gen1; tax1': {'g2'}, 'Root; d__Bacteria; p; c; o; f; gen1': {'g1'}}
         self.assertEqual(
             expected,
-            Condenser()._find_descendents_with_missing_genes(otus, genes_per_domain)
+            Condenser()._find_missing_genes(otus, genes_per_domain)
         )
 
 if __name__ == "__main__":

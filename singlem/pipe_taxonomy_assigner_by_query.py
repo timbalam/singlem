@@ -82,15 +82,16 @@ class PipeTaxonomyAssignerByQuery:
 
         def process_hits_batch(window_to_read_names, spkg_key, current_hits, pair_index):
             # Get LCA of taxonomy of best hits
-            best_hit_divergence = min([h.divergence for h in current_hits])
-            best_hit_taxonomies = []
-            good_hit_taxonomies = []
-            for h in current_hits:
-                if h.divergence == best_hit_divergence:
-                    best_hit_taxonomies.append(h.subject.taxonomy)
-                else:
-                    good_hit_taxonomies.append(h.subject.taxonomy)
-            # We want the final result to be a hash of spkg to sample name to hash of sequence name to taxonomies list
+            #best_hit_divergence = min([h.divergence for h in current_hits])
+            #best_hit_taxonomies = []
+            #good_hit_taxonomies = []
+            #for h in current_hits:
+            #    if h.divergence == best_hit_divergence:
+            #        best_hit_taxonomies.append(h.subject.taxonomy)
+            #    else:
+            #        good_hit_taxonomies.append(h.subject.taxonomy)       
+            best_hit_taxonomies = [(h.subject.taxonomy, h.divergence) for h in current_hits]
+            # We want the final result to be a hash of spkg to sample name to hash of sequence name to taxonomies+score list
             for hit in current_hits:
                 for sample_name in aligned_seqs_to_package_and_sample_name[pair_index][hit.query.sequence].keys():
                     if spkg_key not in final_result[pair_index]:
@@ -98,7 +99,8 @@ class PipeTaxonomyAssignerByQuery:
                     if sample_name not in final_result[pair_index][spkg_key]:
                         final_result[pair_index][spkg_key][sample_name] = {}
                     for read_name in window_to_read_names[pair_index][hit.query.sequence]:
-                        final_result[pair_index][spkg_key][sample_name][read_name] = (best_hit_taxonomies, good_hit_taxonomies)
+                        final_result[pair_index][spkg_key][sample_name][read_name] = best_hit_taxonomies
+                        #final_result[pair_index][spkg_key][sample_name][read_name] = (best_hit_taxonomies, good_hit_taxonomies)
 
         def query_single_set(queries, pair_index):
             last_query = None
@@ -156,75 +158,54 @@ class QueryTaxonomicAssignmentResult:
         else:
             self._spkg_to_sample_to_name_to_taxonomies = spkg_to_sample_to_name_to_taxonomies
 
-    def _lca_taxonomy(self, taxonomy_strings):
-        # The metapackage may or may not have Root in the taxonomy, so add
-        # it only if required.
-        return TaxonomyUtils.ensure_root(TaxonomyUtils.lca_taxonomy_of_strings(taxonomy_strings))
+    def _lca_taxonomy(self, taxon_list):
+        return TaxonomyUtils.lca_taxonomy_of_strings(taxon_list)
 
+    def _best_good_hits(self, taxonomy_strings_scores, good_hits):
+        best_score = min([v[1] for v in taxonomy_strings_scores])
+        best_good_hits = ([], [])
+        for v in taxonomy_strings_scores:
+            if v[1] == best_score:
+                best_good_hits[0].append(TaxonomyUtils.ensure_root(v[0]))
+            else:
+                best_good_hits[1].append(TaxonomyUtils.ensure_root(v[0]))
+        return best_good_hits if good_hits else best_good_hits[0]
+    
     def get_best_hits(self, singlem_package, sample_name):
         """ Return dict of read name to LCA of taxonomic hits (or list of 2 dicts for paired reads) """
-        spkg_key = singlem_package.base_directory()
-        if spkg_key not in self._spkg_to_sample_to_name_to_taxonomies:
-            if self._analysing_pairs:
-                return [{}, {}]
-            else:
-                return {}
+        equal_best_hits = self.get_equal_best_hits(singlem_package, sample_name)
         if self._analysing_pairs:
-            try:
-                return [
-                    {k: self._lca_taxonomy(v[0])
-                     for (k, v) in name_to_taxonomies.items()}
-                    for name_to_taxonomies in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name]
-                ]
-            except KeyError:
-                return [{}, {}]
+            return [
+                {k: self._lca_taxonomy(v) for (k, v) in name_to_taxonomies.items()}
+                for name_to_taxonomies in equal_best_hits
+            ]
         else:
-            # In case where there are multiple samples, sample might not be in
-            # each hash, so avoid a KeyError here.
-            try:
-                return {k: self._lca_taxonomy(v[0])
-                        for (k, v) in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name].items()}
-            except KeyError:
-                return {}
+            return {k: self._lca_taxonomy(v) for (k, v) in equal_best_hits.items()}
 
     def get_equal_best_hits(self, singlem_package, sample_name, good_hits = False):
         """ Return dict of read name to list of all equal-best taxonomic hits (or list of 2 dicts for paired reads) """
         spkg_key = singlem_package.base_directory()
-        if spkg_key not in self._spkg_to_sample_to_name_to_taxonomies:
-            if self._analysing_pairs:
-                return [{}, {}]
-            else:
-                return {}
-        if spkg_key not in self._spkg_to_sample_to_name_to_taxonomies:
-            return {}
         # The metapackage may or may not have Root in the taxonomy, so add
         # it only if required.
         if self._analysing_pairs:
-            return (
-                [{
-                    name: ([TaxonomyUtils.ensure_root(tax) for tax in best_taxonomies],
-                           [TaxonomyUtils.ensure_root(tax) for tax in good_taxonomies])
-                           if good_hits
-                           else [TaxonomyUtils.ensure_root(tax) for tax in best_taxonomies]
-                    for (name, (best_taxonomies, good_taxonomies)) in name_to_taxonomies.items()
+            try:
+                return [{
+                    name: self._best_good_hits(best_taxonomies_scores, good_hits)
+                    for (name, best_taxonomies_scores) in name_to_taxonomies.items()
                 } for name_to_taxonomies in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name]]
-                if sample_name in self._spkg_to_sample_to_name_to_taxonomies[spkg_key]
-                else [{}, {}]
-            )
+            except KeyError:
+                return [{}, {}]
         else:
             # In case where there are multiple samples, sample might not be in
             # each hash, so avoid a KeyError here.
-            return (
-                {
-                    name: ([TaxonomyUtils.ensure_root(tax) for tax in best_taxonomies],
-                        [TaxonomyUtils.ensure_root(tax) for tax in good_taxonomies])
-                        if good_hits
-                        else [TaxonomyUtils.ensure_root(tax) for tax in best_taxonomies]
-                    for (name, (best_taxonomies, good_taxonomies)) in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name].items()
+            try:
+                return {
+                    name: self._best_good_hits(best_taxonomies_scores, good_hits)
+                    for (name, best_taxonomies_scores)
+                    in self._spkg_to_sample_to_name_to_taxonomies[spkg_key][sample_name].items()
                 }
-                if sample_name in self._spkg_to_sample_to_name_to_taxonomies[spkg_key]
-                else {}
-            )
+            except KeyError:
+                return {}
 
     def is_assigned_taxonomy(self, singlem_package, sample_name, sequence_name, pair_index):
         spkg_key = singlem_package.base_directory()
