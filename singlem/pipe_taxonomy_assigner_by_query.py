@@ -108,7 +108,7 @@ class PipeTaxonomyAssignerByQuery:
 
             if len(queries) > 0:
                 logging.info("Querying against species database with %d sequences, using method %s and max divergence %s" % (len(queries), method, max_species_divergence))
-                for hit in querier.query_with_queries(queries, sdb, max_species_divergence, method, SequenceDatabase.NUCLEOTIDE_TYPE, None, None, False, None):
+                for hit in querier.query_with_queries(queries, sdb, max_species_divergence, method, SequenceDatabase.NUCLEOTIDE_TYPE, 1000, None, False, None):
                     # hit has (query, subject, divergence)
                     # subject has .taxonomy
                     if last_query != hit.query.name:
