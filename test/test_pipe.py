@@ -1225,6 +1225,33 @@ CGGGATGTAGGCAGTGACCTCCACGCCTGAGGAGAGCCGGACGCGTGCGACCTTGCGCAACGCCGAGTTCGGCTTCTTCG
         self.assertEqualOtuTable(
             list([line.split("\t") for line in expected]),
             extern.run(cmd))
+    
+    def test_smafa_naive_then_diamond_single_good_hits(self):
+        expected = [
+            self.headers_with_extras,
+            ['4.11.22seqs',
+             '4.11.22seqs.gpkg.spkg_inseqs',
+             'TTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTA',
+             '1',
+             '2.44',
+             'Root; part_of_sdb; Root; d__Bacteria; p__Firmicutes; c__Clostridia; o__Clostridiales; f__Lachnospiraceae; g__[Lachnospiraceae_bacterium_NK4A179]; s__Lachnospiraceae_bacterium_NK4A179',
+             'HWI-ST1243:156:D1K83ACXX:7:1106:18671:79482',
+             '60',
+             'False',
+             'ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTACGTCGTGCAGCTGAA',
+             'Root; part_of_sdb; Root; d__Bacteria; p__Firmicutes; c__Clostridia; o__Clostridiales; f__Lachnospiraceae; g__[Lachnospiraceae_bacterium_NK4A179]; s__Lachnospiraceae_bacterium_NK4A179',
+             'singlem_query_based',
+             '']
+        ]
+        cmd = '{} pipe --sequences {} --otu-table /dev/stdout --singlem-packages {} --assignment-singlem-db {} --assignment-method smafa_naive_then_diamond --output-extras'.format(
+            path_to_script,
+            os.path.join(path_to_data, '4.11.22seqs.gpkg.spkg_inseqs.fna'),
+            os.path.join(path_to_data, '4.11.22seqs.gpkg.spkg'),
+            os.path.join(path_to_data, '4.11.22seqs.paired.manual.json.v5.smafa_naive.sdb'),
+        )
+        self.assertEqualOtuTable(
+            expected,
+            extern.run(cmd))
 
     def test_exclude_off_target_hits(self):
         without_exclude = "gene    sample  sequence        num_hits        coverage        taxonomy\n" \
