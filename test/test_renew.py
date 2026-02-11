@@ -95,12 +95,24 @@ class Tests(unittest.TestCase):
                     self.assertEqual(observed, expected)
 
     def test_smafa_naive_then_diamond_single_good_hits(self):
-        cmd = f"{path_to_script} renew --input-archive-otu-table {path_to_data}/inseqs.fast_protein.json --otu-table /dev/stdout --metapackage {path_to_data}/4.11.22seqs.gpkg.spkg.smpkg/ --taxonomic-profile /dev/stdout --assignment-method smafa_naive_then_diamond --output-extras --max-species-divergence 20"
+        cmd = f"{path_to_script} renew --input-archive-otu-table {path_to_data}/inseqs.fast_protein.json --otu-table /dev/stdout --metapackage {path_to_data}/4.11.22seqs.gpkg.spkg.smpkg/ --assignment-method smafa_naive_then_diamond --output-extras --max-species-divergence 24"
         expected = [
             self.headers_with_extras,
-            ['inseqs',
+            ['4.11.22seqs',
+             'inseqs',
+             'TTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTA',
+             '1',
              '2.44',
-             'Root; d__Bacteria; p__Firmicutes; c__Clostridia; o__Clostridiales; f__Lachnospiraceae; g__[Lachnospiraceae_bacterium_NK4A179]']
+             'Root; d__Bacteria; p__Firmicutes; c__Clostridia; o__Clostridiales; f__Lachnospiraceae; g__Blautia; s__Blautia_wexlerae',
+             'HWI-ST1243:156:D1K83ACXX:7:1106:18671:79482',
+             '60',
+             'False',
+             'ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTACGTCGTGCAGCTGAA',
+             'Root; d__Bacteria; p__Firmicutes; c__Clostridia; o__Clostridiales; f__Lachnospiraceae; g__Blautia; s__Blautia_wexlerae',
+             'singlem_query_based',
+             'Root; d__Bacteria; p__Firmicutes_A; c__Clostridia; o__Lachnospirales; f__Lachnospiraceae; g__NK4A136; s__NK4A136 sp000421045 '
+             'Root; d__Bacteria; p__Proteobacteria; c__Deltaproteobacteria; o__Myxococcales; f__Myxococcaceae; g__Myxococcus; s__Myxococcus_stipitatus'
+             ]
         ]
         
         self.assertEqualOtuTable(
