@@ -694,6 +694,23 @@ class Condenser:
     
     def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain):
 
+        anc_to_count = {} # Calculate number of best hits with each higher level taxon
+        for otu in sample_otus:
+            best_hit_taxonomies = otu.equal_best_hit_taxonomies()
+            if (
+                    best_hit_taxonomies is not None
+                    and otu.taxonomy_assignment_method()
+                    in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)
+                    ):
+                
+                # count ancestors of best hit taxa.
+                for best_hit_tax in best_hit_taxonomies:
+                    for anc_tax in TaxonomyUtils.ancestor_taxonomies(best_hit_tax):
+                        try:
+                            anc_to_count[anc_tax] += 1
+                        except KeyError:
+                            anc_to_count[anc_tax] = 1
+        
         # Set up initial conditions. The coverage of each species is set to 1
         taxon_to_coverage = {}
         otu_to_taxon_to_prop = []
@@ -706,17 +723,20 @@ class Condenser:
                     in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)
                     ):
                 
-                # initialise OTU for best hit taxa.
-                # TODO: Map taxa with missing genes to ancestors somehow?
+                # initialise OTU for best hit taxa
+                # and taxa at higher ranks with more aggregate hits
+                # (this restriction avoids adding degenerate ancestor taxa)
+                # to allow nmds to assign OTU abundances to higher levels.
                 for best_hit_tax in best_hit_taxonomies:
-                    clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
-                    if clean_tax not in taxon_to_prop:
-                        taxon_to_prop[clean_tax] = 1
-                    if clean_tax not in taxon_to_coverage:
-                        taxon_to_coverage[clean_tax] = 1
-
+                    num_hits = 0
+                    for anc_tax in TaxonomyUtils.ancestor_taxonomies(best_hit_tax):
+                        anc_hits = anc_to_count[anc_tax]
+                        if anc_hits > num_hits:
+                            taxon_to_prop[anc_tax] = 1
+                            taxon_to_coverage[anc_tax] = 1
+                            num_hits = anc_hits
+                    
             otu_to_taxon_to_prop.append(taxon_to_prop)
-
         if len(taxon_to_coverage) == 0: return None
         
         num_steps = 0
@@ -735,7 +755,7 @@ class Condenser:
                         taxon_to_gene_to_prop[tax] = {}
                     if otu.marker not in taxon_to_gene_to_prop[tax]:
                         taxon_to_gene_to_prop[tax][otu.marker] = 0
-                    taxon_to_gene_to_prop[tax][otu.marker] = taxon_to_gene_to_prop[tax][otu.marker] + prop / total_coverage * otu.coverage
+                    taxon_to_gene_to_prop[tax][otu.marker] += prop / total_coverage * otu.coverage
                     
             next_otu_to_taxon_to_prop = []
             max_coef_change = 0
