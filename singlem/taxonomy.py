@@ -61,3 +61,7 @@ class TaxonomyUtils:
             if taxonomy_string.startswith('Root')
             else 'Root; '+taxonomy_string
         )
+
+    @staticmethod
+    def rank(taxonomy_string):
+        return len(TaxonomyUtils.ensure_root(taxonomy_string).split(";")) - 1
