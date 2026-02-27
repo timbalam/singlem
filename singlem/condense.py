@@ -837,27 +837,21 @@ class Condenser:
                 for tax, current_prev in taxon_to_prev.items():
                     
                     # Make NMDS updates to OTU-taxon prevalences
-                    if prevalence_rank_penalty is not None:
-                        coverage = taxon_to_coverage[tax][0]
-                        rank = TaxonomyUtils.rank(tax)
-                        numerator = max(
-                            measured_otu_coverage - prevalence_rank_penalty[rank] / coverage,
-                            min_scale_factor / coverage
-                        )
-                    else:
-                        numerator = measured_otu_coverage
+                    coverage = taxon_to_coverage[tax][0]
+                    numerator = max(
+                        measured_otu_coverage - prevalence_rank_penalty[TaxonomyUtils.rank(tax)] / coverage
+                        if prevalence_rank_penalty is not None
+                        else measured_otu_coverage,
+                        min_scale_factor / coverage
+                    )
                     updated_prev = current_prev * numerator / current_expected_otu_coverage
-
-                    # we stuff in (current, updated) pair of values in place!
-                    # later we will drop current
-                    taxon_to_prev[tax] = (current_prev, updated_prev)
 
                     # Calculate:
                     # - gene-wise prevalence totals for coverage normalisation
                     # - gene-wise expected OTU parts (part of measured OTU coverage for a best hit)
                     #   to use for NMDS coverage update
                     gene_to_prev = taxon_to_coverage[tax][1]
-                    if coverage_rank_penalty is not None:
+                    if coverage_rank_penalty is not None or prevalence_rank_penalty is not None:
                         if marker not in gene_to_prev:
                             gene_to_prev[marker] = [0, 0, 0]
                         
@@ -869,10 +863,13 @@ class Condenser:
                             gene_to_prev[marker] = 0
                             
                         gene_to_prev[marker] += updated_prev
+                    
+                    # update prevalence in place!
+                    taxon_to_prev[tax] = updated_prev
                 
-                if coverage_rank_penalty is not None:
+                if coverage_rank_penalty is not None or prevalence_rank_penalty is not None:
                     # Third pass over best hit taxa
-                    for tax, (current_prev, updated_prev) in taxon_to_prev.items():
+                    for tax, updated_prev in taxon_to_prev.items():
 
                         # Calculate gene-wise expected otu coverage after applying NMDS prevalence updates
                         # to use for NMDS coverage update.
@@ -882,57 +879,52 @@ class Condenser:
 
             # Second pass over OTUs
             # after calculation of gene-wise totals
-            max_coef_change = 0
             for taxon_to_prev, marker, measured_otu_coverage in otu_to_best_hits:
 
                 # Third pass over best hit taxa
-                for tax, (current_prev, updated_prev) in taxon_to_prev.items():
+                for tax, updated_prev in taxon_to_prev.items():
                     
                     gene_to_prev = taxon_to_coverage[tax][1]
                     
-                    # replace (current, updated) pair with final updated value in place!
+                    # updated value in place!
                     taxon_to_prev[tax] = updated_prev / (
                         gene_to_prev[marker][0]
-                        if coverage_rank_penalty is not None else
+                        if coverage_rank_penalty is not None or prevalence_rank_penalty is not None else
                         gene_to_prev[marker]
                     )
-                    
-                    # current value not needed after here
-                    max_coef_change = max(max_coef_change, abs(taxon_to_prev[tax] - current_prev))
             
             # Pass over taxa
+            max_coef_change = 0
             for tax, [current_coverage, gene_to_prev] in taxon_to_coverage.items():
 
                 # We apply gene-wise NMDS coverage updates
                 # to gene-wise prevalence totals.
-                if coverage_rank_penalty is not None:
-                    updated_gene_to_prev = {}
+                if coverage_rank_penalty is not None or prevalence_rank_penalty is not None:
                     for marker, [total_prev, otu_coverage_part, expected_coverage] in gene_to_prev.items():
-                        rank = TaxonomyUtils.rank(tax)
                         numerator = max(
-                            otu_coverage_part - coverage_rank_penalty[rank],
+                            otu_coverage_part - coverage_rank_penalty[TaxonomyUtils.rank(tax)]
+                            if coverage_rank_penalty is not None
+                            else otu_coverage_part,
                             min_scale_factor
                         )
-                        updated_gene_to_prev[marker] = total_prev * numerator / expected_coverage
+
+                        # replace [total_prev, otu_coverage_part, expected_coverage] triple 
+                        # with updated prev only (in place!)
+                        gene_to_prev[marker] = total_prev * numerator / expected_coverage
                     
-                    # clean up
-                    del gene_to_prev
-                else:
-                    updated_gene_to_prev = gene_to_prev
 
                 num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
                 
-                logging.debug("Using {} markers for OTU taxonomy {}, with prevalences {}".format(num_markers, tax, updated_gene_to_prev.values()))
+                logging.debug("Using {} markers for OTU taxonomy {}, with prevalences {}".format(num_markers, tax, gene_to_prev.values()))
 
-                # We compute the average of gene-wise NMDS updated prevalence totals then apply in place! to coverages (reseting gene_to_prev for next iteration)
-                taxon_to_coverage[tax][0] *= self.calculate_abundance(list(updated_gene_to_prev.values()), num_markers, trim_percent)
-                taxon_to_coverage[tax][1] = {}
-
-                # clean up
-                del updated_gene_to_prev
+                # We compute the average of gene-wise NMDS updated prevalence totals then apply (in place!) to coverages (reseting gene_to_prev for next iteration)
+                taxon_to_coverage[tax][0] *= self.calculate_abundance(list(gene_to_prev.values()), num_markers, trim_percent)
+                gene_to_prev.clear()
                 
                 max_coef_change = max(max_coef_change, abs(taxon_to_coverage[tax][0] - current_coverage))
 
+            # prevalence values can be unstable when a taxon is absent
+            # so iterate until coverages converge
             need_another_iteration = max_coef_change > 0.001
             if not need_another_iteration:
                 break

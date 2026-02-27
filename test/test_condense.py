@@ -106,24 +106,15 @@ class Tests(unittest.TestCase):
              'Root; d__Bacteria; p; c; o; f; g; tax2': 0.001},
             species_to_coverage
         )
-
-    def test_apply_expectation_maximization_core_expaper_zero_reg(self):
-        otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
-        otus.data = [
-            ['g1', 'sample1', 'seq1', 1, 10, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g2', 'sample1', 'seq2', 1, 8, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD]
-        ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(
+        species_to_coverage_zero_reg = Condenser()._apply_tim_expectation_maximization_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
             prevalence_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0],
             coverage_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0]
         )
         self.assertEqual(
-            {'Root; d__Bacteria; p; c; o; f; g; tax1': 8.999,
-             'Root; d__Bacteria; p; c; o; f; g; tax2': 0.001},
-            species_to_coverage
+            species_to_coverage,
+            species_to_coverage_zero_reg
         )
     
     def test_apply_expectation_maximization_core_expaper_reg(self):
@@ -136,8 +127,8 @@ class Tests(unittest.TestCase):
         species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
-            prevalence_rank_penalty = [10, 10, 10, 10, 10, 10, 1, 0.1],
-            coverage_rank_penalty = [10, 10, 10, 10, 10, 10, 1, 0.1]
+            prevalence_rank_penalty = [2.0, 1.9, 1.8, 1.6, 1.4, 1.2, 1, 0.1],
+            coverage_rank_penalty = [2.0, 1.9, 1.8, 1.6, 1.4, 1.2, 1, 0.1]
         )
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; g; tax1': 8.9},
@@ -157,6 +148,77 @@ class Tests(unittest.TestCase):
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; g; tax1': 10.999,
              'Root; d__Bacteria; p; c; o; f; g; tax2': 4.001},
+            species_to_coverage
+        )
+
+    def test_apply_expectation_maximization_core_exparts(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1, 12, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1, 3, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g2', 'sample1', 'seq3', 1, 11, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g2', 'sample1', 'seq4', 1, 4, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD]
+        ]
+        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
+        self.assertEqual(
+            {'Root; d__Bacteria; p; c; o; f; g; tax1': 10.999,
+             'Root; d__Bacteria; p; c; o; f; g; tax2': 4.001},
+            species_to_coverage
+        )
+        species_to_coverage_zero_prev_reg = Condenser()._apply_tim_expectation_maximization_core(
+            otus,
+            genes_per_domain = {'Bacteria': ['g1', 'g2']},
+            prevalence_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0])
+        self.assertEqual(
+            species_to_coverage,
+            species_to_coverage_zero_prev_reg
+        )
+        species_to_coverage_zero_cov_reg = Condenser()._apply_tim_expectation_maximization_core(
+            otus,
+            genes_per_domain = {'Bacteria': ['g1', 'g2']},
+            coverage_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0])
+        self.assertEqual(
+            species_to_coverage,
+            species_to_coverage_zero_cov_reg
+        )
+    
+    def test_apply_expectation_maximization_core_exparts_reg(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1, 12, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq2', 1, 3, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g2', 'sample1', 'seq3', 1, 11, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g2', 'sample1', 'seq4', 1, 4, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD]
+        ]
+        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(
+            otus,
+            genes_per_domain = {'Bacteria': ['g1', 'g2']},
+            prevalence_rank_penalty = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1, 0.01],
+            coverage_rank_penalty = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1, 0.01]
+        )
+        self.assertEqual(
+            {'Root; d__Bacteria; p; c; o; f; g; tax1': 10.99,
+             'Root; d__Bacteria; p; c; o; f; g; tax2': 3.992},
+            species_to_coverage
+        )
+
+    def test_apply_expectation_maximization_core_exgenus_reg(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1, 5, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g2', 'sample1', 'seq2', 1, 5, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD]
+        ]
+        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(
+            otus,
+            genes_per_domain = {'Bacteria': ['g1', 'g2']},
+            prevalence_rank_penalty = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1, 0.01],
+            coverage_rank_penalty = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1, 0.01]
+        )
+        self.assertEqual(
+            {'Root; d__Bacteria; p; c; o; f; g': 4.901},
             species_to_coverage
         )
 
