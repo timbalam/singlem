@@ -38,75 +38,75 @@ path_to_data = os.path.join(os.path.dirname(os.path.realpath(__file__)),'data','
 class Tests(unittest.TestCase):
     maxDiff = None
     
-    def test_apply_expectation_maximization_core_trivial(self):
+    def test_apply_nonneg_matrix_factorisation_core_trivial(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         # str.split('gene    sample    sequence    num_hits    coverage    taxonomy    read_names    nucleotides_aligned  taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method')
         otus.data = [
             ['g1', 'sample1', 'seq1', 1, 1.05,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; g; tax1': 1.05},
             species_to_coverage
         )
 
-    def test_apply_expectation_maximization_core_split1(self):
+    def test_apply_nonneg_matrix_factorisation_core_split1(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
             ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; g; tax1': 1.1,
              'Root; d__Bacteria; p; c; o; f; g': 1.1},
             species_to_coverage
         )
 
-    def test_apply_expectation_maximization_core_split2(self):
+    def test_apply_nonneg_matrix_factorisation_core_split2(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD],
             ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; g': 1.1,
              'Root; d__Bacteria; p; c; o; f; g; tax1': 1.1},
             species_to_coverage
         )
 
-    def test_apply_expectation_maximization_core_genus(self):
+    def test_apply_nonneg_matrix_factorisation_core_genus(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;genus1'],QUERY_BASED_ASSIGNMENT_METHOD],
             ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f'],QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1']})
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']})
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; genus1': 1.1,
              'Root; d__Bacteria; p; c; o; f': 1.1},
             species_to_coverage
         )
 
-    def test_apply_expectation_maximization_core_expaper(self):
+    def test_apply_nonneg_matrix_factorisation_core_expaper(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 1, 10, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD],
             ['g2', 'sample1', 'seq2', 1, 8, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; g; tax1': 8.999,
              'Root; d__Bacteria; p; c; o; f; g; tax2': 0.001},
             species_to_coverage
         )
-        species_to_coverage_zero_reg = Condenser()._apply_tim_expectation_maximization_core(
+        species_to_coverage_zero_reg = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
             prevalence_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0],
@@ -117,14 +117,14 @@ class Tests(unittest.TestCase):
             species_to_coverage_zero_reg
         )
     
-    def test_apply_expectation_maximization_core_expaper_reg(self):
+    def test_apply_nonneg_matrix_factorisation_core_expaper_reg(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 1, 10, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD],
             ['g2', 'sample1', 'seq2', 1, 8, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
             prevalence_rank_penalty = [2.0, 1.9, 1.8, 1.6, 1.4, 1.2, 1, 0.1],
@@ -135,7 +135,7 @@ class Tests(unittest.TestCase):
             species_to_coverage
         )
 
-    def test_apply_expectation_maximization_core_exparts(self):
+    def test_apply_nonneg_matrix_factorisation_core_exparts(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
@@ -144,14 +144,14 @@ class Tests(unittest.TestCase):
             ['g2', 'sample1', 'seq3', 1, 11, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
             ['g2', 'sample1', 'seq4', 1, 4, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; g; tax1': 10.999,
              'Root; d__Bacteria; p; c; o; f; g; tax2': 4.001},
             species_to_coverage
         )
 
-    def test_apply_expectation_maximization_core_exparts(self):
+    def test_apply_nonneg_matrix_factorisation_core_exparts(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
@@ -160,13 +160,13 @@ class Tests(unittest.TestCase):
             ['g2', 'sample1', 'seq3', 1, 11, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
             ['g2', 'sample1', 'seq4', 1, 4, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
         self.assertEqual(
             {'Root; d__Bacteria; p; c; o; f; g; tax1': 10.999,
              'Root; d__Bacteria; p; c; o; f; g; tax2': 4.001},
             species_to_coverage
         )
-        species_to_coverage_zero_prev_reg = Condenser()._apply_tim_expectation_maximization_core(
+        species_to_coverage_zero_prev_reg = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
             prevalence_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0])
@@ -174,7 +174,7 @@ class Tests(unittest.TestCase):
             species_to_coverage,
             species_to_coverage_zero_prev_reg
         )
-        species_to_coverage_zero_cov_reg = Condenser()._apply_tim_expectation_maximization_core(
+        species_to_coverage_zero_cov_reg = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
             coverage_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0])
@@ -183,7 +183,7 @@ class Tests(unittest.TestCase):
             species_to_coverage_zero_cov_reg
         )
     
-    def test_apply_expectation_maximization_core_exparts_reg(self):
+    def test_apply_nonneg_matrix_factorisation_core_exparts_reg(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
@@ -192,7 +192,7 @@ class Tests(unittest.TestCase):
             ['g2', 'sample1', 'seq3', 1, 11, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
             ['g2', 'sample1', 'seq4', 1, 4, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
             prevalence_rank_penalty = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1, 0.01],
@@ -204,14 +204,14 @@ class Tests(unittest.TestCase):
             species_to_coverage
         )
 
-    def test_apply_expectation_maximization_core_exgenus_reg(self):
+    def test_apply_nonneg_matrix_factorisation_core_exgenus_reg(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION4
         otus.data = [
             ['g1', 'sample1', 'seq1', 1, 5, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
             ['g2', 'sample1', 'seq2', 1, 5, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD]
         ]
-        species_to_coverage = Condenser()._apply_tim_expectation_maximization_core(
+        species_to_coverage = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
             prevalence_rank_penalty = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1, 0.01],

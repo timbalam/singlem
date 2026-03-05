@@ -259,7 +259,6 @@ def add_condense_arguments(parser):
         help="Condense from the archive tables newline separated in this file")
     input_condense_arguments.add_argument('--input-gzip-archive-otu-table-list',
         help="Condense from the gzip'd archive tables newline separated in this file")
-    input_condense_arguments.add_argument('--em-tim', action="store_true") 
 
     output_condense_arguments = parser.add_argument_group("Output arguments (1+ required)")
     output_condense_arguments.add_argument('-p', '--taxonomic-profile', metavar='filename', help="output OTU table")
@@ -267,6 +266,7 @@ def add_condense_arguments(parser):
     output_condense_arguments.add_argument('--output-after-em-otu-table', metavar='filename', help="output OTU table after expectation maximisation has been applied. Note that this table usually contains multiple rows with the same window sequence.")
 
     optional_condense_arguments = parser.add_argument_group("Other options")
+    optional_condense_arguments.add_argument('--apply-nonneg-matrix-factorisation', action="store_true") 
     optional_condense_arguments.add_argument('--metapackage', help='Set of SingleM packages to use [default: use the default set]')
     current_default = CONDENSE_DEFAULT_MIN_TAXON_COVERAGE
     optional_condense_arguments.add_argument('--min-taxon-coverage',metavar='FRACTION',
@@ -1376,7 +1376,7 @@ def main():
             krona = args.taxonomic_profile_krona,
             min_taxon_coverage = args.min_taxon_coverage,
             output_after_em_otu_table = args.output_after_em_otu_table,
-            em_tim = args.em_tim)
+            apply_nonneg_matrix_factorisation = args.apply_nonneg_matrix_factorisation)
 
     elif args.subparser_name == 'trim_package_hmms':
         from singlem.trim_package_hmms import PackageHmmTrimmer

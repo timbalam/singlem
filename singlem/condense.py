@@ -5,6 +5,7 @@ import numpy as np
 import extern
 import sys
 from queue import Queue
+from collections import defaultdict
 
 from .archive_otu_table import ArchiveOtuTable, ArchiveOtuTableEntry
 from .metapackage import Metapackage
@@ -15,6 +16,7 @@ import os
 DEFAULT_TRIM_PERCENT = 10
 DEFAULT_MIN_TAXON_COVERAGE = 0.35
 DEFAULT_GENOME_MIN_TAXON_COVERAGE = 0.1
+DEFAULT_RANK_PENALTY = [2, 1.8, 1.6, 1.4, 1, 0.5, 0.1, 0.01]
 
 # Set CSV field limit to deal with pipe --output-extras as per
 # https://github.com/wwood/singlem/issues/89 following
@@ -75,7 +77,7 @@ class Condenser:
         min_taxon_coverage = kwargs.pop('min_taxon_coverage', DEFAULT_MIN_TAXON_COVERAGE)
         # apply_expectation_maximisation = kwargs.pop('apply_expectation_maximisation')
         output_after_em_otu_table = kwargs.pop('output_after_em_otu_table', False)
-        em_tim = kwargs.pop('em_tim', False)
+        apply_nonneg_matrix_factorisation = kwargs.pop('apply_nonneg_matrix_factorisation', False)
         if len(kwargs) > 0:
             raise Exception("Unexpected arguments detected: %s" % kwargs)
         logging.info("Using minimum taxon coverage of {}".format(min_taxon_coverage))
@@ -114,11 +116,11 @@ class Condenser:
             logging.debug("Processing sample {} ..".format(sample))
             apply_diamond_expectation_maximisation = True
             yield self._condense_a_sample(sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage, 
-                True, apply_diamond_expectation_maximisation, metapackage, output_after_em_otu_table, viral_mode, em_tim)
+                True, apply_diamond_expectation_maximisation, metapackage, output_after_em_otu_table, viral_mode, apply_nonneg_matrix_factorisation)
 
     def _condense_a_sample(self, sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage, 
             apply_query_expectation_maximisation, apply_diamond_expectation_maximisation, metapackage,
-            output_after_em_otu_table, viral_mode, em_tim):
+            output_after_em_otu_table, viral_mode, apply_nonneg_matrix_factorisation):
 
         # Remove off-target OTUs genes
         logging.debug("Total OTU coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
@@ -148,10 +150,13 @@ class Condenser:
             # query_best_hits = [o.equal_best_hit_taxonomies() for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD]
             taxon_marker_counts = metapackage.get_taxon_marker_counts(query_best_hits)
 
-        if em_tim:
+        if apply_nonneg_matrix_factorisation:
             logging.info("Converting DIAMOND IDs to taxons")
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
-            condensed_otus = self._apply_tim_expectation_maximization(sample, sample_otus, genes_per_domain = target_domains)
+            condensed_otus = self._apply_nonneg_matrix_factorisation(sample, sample_otus,
+                                                                     genes_per_domain = target_domains,
+                                                                     prevalence_rank_penalty = DEFAULT_RANK_PENALTY,
+                                                                     coverage_rank_penalty = DEFAULT_RANK_PENALTY)
             logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
         
         else:
@@ -578,8 +583,8 @@ class Condenser:
         return rounded_genus_to_coverage, \
             list([self._key_to_species_list(k) for k in best_hit_taxonomy_sets])
 
-    def _apply_tim_expectation_maximization(self, sample, sample_otus, **kwargs):
-        logging.info("Applying taxon-wise expectation maximization algorithm to OTU table")
+    def _apply_nonneg_matrix_factorisation(self, sample, sample_otus, **kwargs):
+        logging.info("Applying non-negative matrix factorisation algorithm to OTU table")
 
         logging.debug("Total coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
         logging.debug("Total coverage by diamond: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD])))
@@ -587,12 +592,12 @@ class Condenser:
         logging.info("Demultiplexing OTU best hits")
         demux_otus = self._demultiplex_best_hits(sample_otus)
 
-        taxon_to_coverage = self._apply_tim_expectation_maximization_core(demux_otus, **kwargs)
+        taxon_to_coverage = self._apply_nonneg_matrix_factorisation_core(demux_otus, **kwargs)
 
         if taxon_to_coverage is None:
             return demux_otus
 
-        logging.info("Finished tim expectation maximization")
+        logging.info("Finished non-negative matrix factorisation")
 
         condensed_profile = self._condense_taxon_coverage(sample, taxon_to_coverage)
         
@@ -606,19 +611,14 @@ class Condenser:
         collapse them into an LCA taxonomy.
         '''
 
-        marker_to_best_hit_taxonomy_sets = {}
+        marker_to_best_hit_taxonomy_sets = defaultdict(lambda: defaultdict(lambda: set()))
         for otu in sample_otus:
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
             if best_hit_taxonomies is not None and (
                     otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
                     or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
                     ):
-                if otu.marker not in marker_to_best_hit_taxonomy_sets:
-                    marker_to_best_hit_taxonomy_sets[otu.marker] = {}
                 for best_hit_tax in best_hit_taxonomies:
-                    if best_hit_tax not in marker_to_best_hit_taxonomy_sets[otu.marker]:
-                        marker_to_best_hit_taxonomy_sets[otu.marker][best_hit_tax] = set(best_hit_taxonomies)
-                    else:
                         marker_to_best_hit_taxonomy_sets[otu.marker][best_hit_tax] |= set(best_hit_taxonomies)
 
         all_best_hit_taxonomy_sets = set()
@@ -692,9 +692,12 @@ class Condenser:
         
         return taxon_to_missing_genes
     
-    def _apply_tim_expectation_maximization_core(self, sample_otus, *, genes_per_domain, trim_percent = 0,
-                                                 prevalence_rank_penalty = None, coverage_rank_penalty = None,
-                                                 min_scale_factor = 0.001):
+    def _apply_nonneg_matrix_factorisation_core(self, sample_otus, *,
+                                                genes_per_domain,
+                                                trim_percent = 0,                            
+                                                prevalence_rank_penalty = None,
+                                                coverage_rank_penalty = None,
+                                                min_scale_factor = 1e-9):
 
         # Set up initial conditions. The coverage of each species is set to 1.
         taxon_to_coverage = {}
@@ -707,7 +710,7 @@ class Condenser:
             prevalence_rank_penalty is not None and max(prevalence_rank_penalty) > 0
             or coverage_rank_penalty is not None and max(coverage_rank_penalty) > 0
         )
-        anc_to_child_to_count = {}
+        anc_to_child_to_count = defaultdict(lambda: defaultdict(lambda: 0))
         for otu in sample_otus:
             taxon_to_prev = {}
             child_to_anc = {}
@@ -736,15 +739,10 @@ class Condenser:
             
                     # count unique parent-child pairs.
                     for child_tax, anc_tax in child_to_anc.items():
-                        if not anc_tax in anc_to_child_to_count:
-                            anc_to_child_to_count[anc_tax] = {}
-                        if not child_tax in anc_to_child_to_count[anc_tax]:
-                            anc_to_child_to_count[anc_tax][child_tax] = 0
                         anc_to_child_to_count[anc_tax][child_tax] += 1
                 
                 else: 
                     otu_to_best_hits.append((taxon_to_prev, otu.marker, otu.coverage))
-            
 
         # If using regularisation:
         # Second pass to initialise OTU for best hit taxa
@@ -756,10 +754,11 @@ class Condenser:
         if regularised_augment_hits:
             for i, (child_to_anc, taxon_to_prev, marker, coverage) in enumerate(otu_to_best_hits):
                 for child_tax, anc_tax in child_to_anc.items():
-                    try:
-                        max_child_child_count = max(anc_to_child_to_count[child_tax].values())
-                    except KeyError: # child is a leaf
+                    if child_tax not in anc_to_child_to_count:
+                        # child is a leaf
                         continue
+                    
+                    max_child_child_count = max(anc_to_child_to_count[child_tax].values())
 
                     if anc_to_child_to_count[anc_tax][child_tax] > max_child_child_count:
                         # if child_tax not in taxon_to_marker_to_num_hits:
@@ -895,6 +894,9 @@ class Condenser:
             
             # Pass over taxa
             max_coef_change = 0
+            max_change_taxa = None
+            max_change_current = None
+            max_change_update = None
             for tax, [current_coverage, gene_to_prev] in taxon_to_coverage.items():
 
                 # We apply gene-wise NMDS coverage updates
@@ -911,23 +913,31 @@ class Condenser:
                         # replace [total_prev, otu_coverage_part, expected_coverage] triple 
                         # with updated prev only (in place!)
                         gene_to_prev[marker] = total_prev * numerator / expected_coverage
-                    
-
+                
                 num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
                 
-                logging.debug("Using {} markers for OTU taxonomy {}, with prevalences {}".format(num_markers, tax, gene_to_prev.values()))
+                logging.debug(f"Using {num_markers} markers for OTU taxonomy {tax}, with prevalences {gene_to_prev.values()}")
 
                 # We compute the average of gene-wise NMDS updated prevalence totals then apply (in place!) to coverages (reseting gene_to_prev for next iteration)
                 taxon_to_coverage[tax][0] *= self.calculate_abundance(list(gene_to_prev.values()), num_markers, trim_percent)
                 gene_to_prev.clear()
-                
-                max_coef_change = max(max_coef_change, abs(taxon_to_coverage[tax][0] - current_coverage))
+
+                coef_change = abs(taxon_to_coverage[tax][0] - current_coverage)
+                if coef_change > max_coef_change:
+                    max_change_taxa = tax
+                    max_coef_change = coef_change
+                    max_change_current = current_coverage
+                    max_change_update = taxon_to_coverage[tax][0]
 
             # prevalence values can be unstable when a taxon is absent
             # so iterate until coverages converge
             need_another_iteration = max_coef_change > 0.001
             if not need_another_iteration:
                 break
+
+            if num_steps % 100 == 0:
+                logging.info(f"Max coef change after {num_steps} iterations: {max_coef_change}")
+                logging.info(f"{max_change_taxa} change from {max_change_current} to {max_change_update}")
         
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
