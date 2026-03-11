@@ -16,7 +16,7 @@ import os
 DEFAULT_TRIM_PERCENT = 10
 DEFAULT_MIN_TAXON_COVERAGE = 0.35
 DEFAULT_GENOME_MIN_TAXON_COVERAGE = 0.1
-DEFAULT_RANK_PENALTY = [2, 1.8, 1.6, 1.4, 1, 0.5, 0.1, 0.01]
+DEFAULT_RANK_PENALTY = [2, 1.8, 1.6, 1.4, 1, 0.5, 0.1, 0.01] #rdpcofgs
 
 # Set CSV field limit to deal with pipe --output-extras as per
 # https://github.com/wwood/singlem/issues/89 following
@@ -155,7 +155,6 @@ class Condenser:
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
             condensed_otus = self._apply_nonneg_matrix_factorisation(sample, sample_otus,
                                                                      genes_per_domain = target_domains,
-                                                                     prevalence_rank_penalty = DEFAULT_RANK_PENALTY,
                                                                      coverage_rank_penalty = DEFAULT_RANK_PENALTY)
             logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
         
@@ -694,11 +693,10 @@ class Condenser:
     
     def _apply_nonneg_matrix_factorisation_core(self, sample_otus, *,
                                                 genes_per_domain,
-                                                trim_percent = 0,                            
-                                                prevalence_rank_penalty = None,
+                                                trim_percent = 0,
                                                 coverage_rank_penalty = None,
-                                                min_scale_factor = 1e-9):
-
+                                                min_scale_factor = 1e-3):
+        
         # Set up initial conditions. The coverage of each species is set to 1.
         taxon_to_coverage = {}
         otu_to_best_hits = []
@@ -707,32 +705,33 @@ class Condenser:
         # also calculate number of OTUs with best hits
         # in each higher level taxon on the first pass.
         regularised_augment_hits = (
-            prevalence_rank_penalty is not None and max(prevalence_rank_penalty) > 0
-            or coverage_rank_penalty is not None and max(coverage_rank_penalty) > 0
+            coverage_rank_penalty is not None and max(coverage_rank_penalty) > 0
         )
         anc_to_child_to_count = defaultdict(lambda: defaultdict(lambda: 0))
         for otu in sample_otus:
             taxon_to_prev = {}
             child_to_anc = {}
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
+            good_taxonomies = otu.good_taxonomies()
             if (
-                    best_hit_taxonomies is not None
+                    (best_hit_taxonomies is not None or good_taxonomies is not None)
                     and otu.taxonomy_assignment_method()
                     in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)
                     ):
                 
-                for best_hit_tax in best_hit_taxonomies:
-                    clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
-                    taxon_to_coverage[clean_tax] = [1, {}]
-                    taxon_to_prev[clean_tax] = 1
+                for taxonomies in (best_hit_taxonomies, good_taxonomies):
+                    for best_hit_tax in taxonomies:
+                        clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
+                        taxon_to_coverage[clean_tax] = [1, {}]
+                        taxon_to_prev[clean_tax] = 1
 
-                    # track ancestors of best hit taxa.
-                    if regularised_augment_hits:
-                        child_tax = None
-                        for anc_tax in TaxonomyUtils.ancestor_taxonomies(clean_tax):
-                            if child_tax is not None:
-                                child_to_anc[child_tax] = anc_tax
-                            child_tax = anc_tax
+                        # track ancestors of best hit taxa.
+                        if regularised_augment_hits:
+                            child_tax = None
+                            for anc_tax in TaxonomyUtils.ancestor_taxonomies(clean_tax):
+                                if child_tax is not None:
+                                    child_to_anc[child_tax] = anc_tax
+                                child_tax = anc_tax
 
                 if regularised_augment_hits:
                     otu_to_best_hits.append((child_to_anc, taxon_to_prev, otu.marker, otu.coverage))
@@ -827,34 +826,25 @@ class Condenser:
             
             # First pass over otus
             for taxon_to_prev, marker, measured_otu_coverage in otu_to_best_hits:
-
+                
                 # First pass over best hit taxa
                 current_expected_otu_coverage = sum(prev * taxon_to_coverage[tax][0] for tax, prev in taxon_to_prev.items())
                 
                 # Second pass over best hit taxa
-                updated_expected_otu_coverage = 0
                 for tax, current_prev in taxon_to_prev.items():
                     
                     # Make NMDS updates to OTU-taxon prevalences
-                    coverage = taxon_to_coverage[tax][0]
-                    numerator = max(
-                        measured_otu_coverage - prevalence_rank_penalty[TaxonomyUtils.rank(tax)] / coverage
-                        if prevalence_rank_penalty is not None
-                        else measured_otu_coverage,
-                        min_scale_factor / coverage
-                    )
-                    updated_prev = current_prev * numerator / current_expected_otu_coverage
+                    updated_prev = current_prev * measured_otu_coverage / current_expected_otu_coverage
 
                     # Calculate:
                     # - gene-wise prevalence totals for coverage normalisation
                     # - gene-wise expected OTU parts (part of measured OTU coverage for a best hit)
                     #   to use for NMDS coverage update
                     gene_to_prev = taxon_to_coverage[tax][1]
-                    if coverage_rank_penalty is not None or prevalence_rank_penalty is not None:
+                    if coverage_rank_penalty is not None:
                         if marker not in gene_to_prev:
-                            gene_to_prev[marker] = [0, 0, 0]
+                            gene_to_prev[marker] = [0, 0]
                         
-                        updated_expected_otu_coverage += updated_prev * taxon_to_coverage[tax][0]
                         gene_to_prev[marker][0] += updated_prev
                         gene_to_prev[marker][1] += updated_prev * measured_otu_coverage
                     else:
@@ -865,19 +855,10 @@ class Condenser:
                     
                     # update prevalence in place!
                     taxon_to_prev[tax] = updated_prev
-                
-                if coverage_rank_penalty is not None or prevalence_rank_penalty is not None:
-                    # Third pass over best hit taxa
-                    for tax, updated_prev in taxon_to_prev.items():
-
-                        # Calculate gene-wise expected otu coverage after applying NMDS prevalence updates
-                        # to use for NMDS coverage update.
-                        # This and OTU parts use NMDS updated but unnormalised prevalences.
-                        gene_to_prev = taxon_to_coverage[tax][1]
-                        gene_to_prev[marker][2] += updated_prev * updated_expected_otu_coverage
-
+            
             # Second pass over OTUs
             # after calculation of gene-wise totals
+            # but before they have NMDS coverage updates applied
             for taxon_to_prev, marker, measured_otu_coverage in otu_to_best_hits:
 
                 # Third pass over best hit taxa
@@ -888,7 +869,7 @@ class Condenser:
                     # updated value in place!
                     taxon_to_prev[tax] = updated_prev / (
                         gene_to_prev[marker][0]
-                        if coverage_rank_penalty is not None or prevalence_rank_penalty is not None else
+                        if coverage_rank_penalty is not None else
                         gene_to_prev[marker]
                     )
             
@@ -898,21 +879,19 @@ class Condenser:
             max_change_current = None
             max_change_update = None
             for tax, [current_coverage, gene_to_prev] in taxon_to_coverage.items():
-
+                
                 # We apply gene-wise NMDS coverage updates
                 # to gene-wise prevalence totals.
-                if coverage_rank_penalty is not None or prevalence_rank_penalty is not None:
-                    for marker, [total_prev, otu_coverage_part, expected_coverage] in gene_to_prev.items():
-                        numerator = max(
-                            otu_coverage_part - coverage_rank_penalty[TaxonomyUtils.rank(tax)]
-                            if coverage_rank_penalty is not None
-                            else otu_coverage_part,
-                            min_scale_factor
+                if coverage_rank_penalty is not None:
+                    for marker, [total_prev, otu_coverage_part] in gene_to_prev.items():
+                        penalty_factor = max(
+                            1 - coverage_rank_penalty[TaxonomyUtils.rank(tax)] / otu_coverage_part,
+                            min_scale_factor / otu_coverage_part
                         )
 
-                        # replace [total_prev, otu_coverage_part, expected_coverage] triple 
+                        # replace [total_prev, otu_coverage_part] pair
                         # with updated prev only (in place!)
-                        gene_to_prev[marker] = total_prev * numerator / expected_coverage
+                        gene_to_prev[marker] = total_prev * penalty_factor
                 
                 num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
                 
@@ -937,7 +916,7 @@ class Condenser:
 
             if num_steps % 100 == 0:
                 logging.info(f"Max coef change after {num_steps} iterations: {max_coef_change}")
-                logging.info(f"{max_change_taxa} change from {max_change_current} to {max_change_update}")
+                logging.debug(f"{max_change_taxa} change from {max_change_current} to {max_change_update}")
         
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species

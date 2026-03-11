@@ -64,4 +64,4 @@ class TaxonomyUtils:
 
     @staticmethod
     def rank(taxonomy_string):
-        return len(TaxonomyUtils.ensure_root(taxonomy_string).split(";")) - 1
+        return TaxonomyUtils.ensure_root(taxonomy_string).count(";")

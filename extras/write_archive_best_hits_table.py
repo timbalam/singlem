@@ -32,6 +32,7 @@ import sys
 import argparse
 import logging
 import itertools
+from collections import defaultdict
 
 #import pandas as pd
 
@@ -39,6 +40,7 @@ sys.path = [os.path.join(os.path.dirname(os.path.realpath(__file__)),'..')] + sy
 from singlem.otu_table_collection import StreamingOtuTableCollection
 from singlem.metapackage import Metapackage
 from singlem.condense import Condenser
+from singlem.taxonomy import *
 
 def debug_write_archive(archive_otu_table, metapackage_path, hits_table):
 
@@ -67,37 +69,90 @@ def debug_write_archive(archive_otu_table, metapackage_path, hits_table):
     
     with(open(hits_table, "w")) as f:
         otu_hits_table = {"sample": [],
-                         "marker": [],
-                         "domain": [],
-                         "coverage": []}
+                          "marker": [],
+                          "domain": [],
+                          "coverage": []}
         taxon_hits_table = {}
         num_otus = 0
         for sample, sample_otus in otus.each_sample_otus(generate_archive_otu_table=True):
             sample_otus = Condenser()._remove_off_target_otus(sample_otus, markers)
             Condenser()._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
-            sample_otus = list(sample_otus)
-            new_num_otus = len(sample_otus)
+
+            anc_to_child_to_count = defaultdict(lambda: defaultdict(lambda: 0))
+            otu_to_best_hits = []
+            for otu in sample_otus:
+                best_hit_taxonomies = otu.equal_best_hit_taxonomies()
+                good_taxonomies = otu.good_taxonomies()
+                if (
+                        best_hit_taxonomies is not None or good_taxonomies is not None
+                        and otu.taxonomy_assignment_method()
+                        in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)
+                        ):
+                    
+                    child_to_anc = {}
+                    clean_best_hits = []
+                    for taxonomies in (best_hit_taxonomies, good_taxonomies):
+                        clean_hits = []
+                        if taxonomies is not None:
+                            for tax in taxonomies:
+                                clean_tax = TaxonomyUtils.clean_taxonomy_string(tax)
+                                clean_hits.append(clean_tax)
+
+                                # track ancestors of best hit taxa.
+                                child_tax = None
+                                for anc_tax in TaxonomyUtils.ancestor_taxonomies(clean_tax):
+                                    if child_tax is not None:
+                                        child_to_anc[child_tax] = anc_tax
+                                    child_tax = anc_tax
+                        
+                        clean_best_hits.append(clean_hits)
+
+                    # count unique parent-child pairs.
+                    for child_tax, anc_tax in child_to_anc.items():
+                        anc_to_child_to_count[anc_tax][child_tax] += 1
+                    
+                    otu_to_best_hits.append((child_to_anc, clean_best_hits, otu.marker, otu.coverage))
+
+            new_num_otus = len(otu_to_best_hits)
             new_markers = [""] * new_num_otus
             new_domains = [""] * new_num_otus
             new_coverages = ["0"] * new_num_otus
             new_taxons = {key: ["0"] * new_num_otus for key in taxon_hits_table.keys()}
-            for i, otu in enumerate(sample_otus):
-                new_markers[i] = otu.marker
-                new_domains[i] = ";".join(markers[otu.marker])
-                new_coverages[i] = f"{otu.coverage:.3}"
-                for best_hit_tax in otu.equal_best_hit_taxonomies():
+            for i, (child_to_anc, (best_hits, good_hits), marker, coverage) in enumerate(otu_to_best_hits):
+                new_markers[i] = marker
+                new_domains[i] = ";".join(markers[marker])
+                new_coverages[i] = f"{coverage:.3}"
+
+                anc_hits = []
+                for child_tax, anc_tax in child_to_anc.items():
+                    if child_tax not in anc_to_child_to_count:
+                        # child is a leaf
+                        continue
+                    
+                    max_child_child_count = max(anc_to_child_to_count[child_tax].values())
+
+                    if anc_to_child_to_count[anc_tax][child_tax] > max_child_child_count:
+                        anc_hits.append(child_tax)
+
+                for best_hit_tax in best_hits:
                     if best_hit_tax not in taxon_hits_table:
                         taxon_hits_table[best_hit_tax] = ["0"] * num_otus
                         new_taxons[best_hit_tax] = ["0"] * new_num_otus
                     new_taxons[best_hit_tax][i] = "1"
-                for good_tax in otu.good_taxonomies():
+                for good_tax in good_hits:
                     if good_tax not in taxon_hits_table:
                         taxon_hits_table[good_tax] = ["0"] * num_otus
                         new_taxons[good_tax] = ["0"] * new_num_otus
                     if new_taxons[good_tax][i] == "1":
-                        new_taxons[good_tax][i] == "3"
+                        new_taxons[good_tax][i] = "3"
                     else:
                         new_taxons[good_tax][i] = "2"
+                for anc_tax in anc_hits:
+                    if anc_tax not in taxon_hits_table:
+                        taxon_hits_table[anc_tax] = ["0"] * num_otus
+                        new_taxons[anc_tax] = ["0"] * new_num_otus
+                    if new_taxons[anc_tax][i] == "0":
+                        new_taxons[anc_tax][i] = "4"
             
             otu_hits_table["sample"] += [sample] * new_num_otus
             otu_hits_table["marker"] += new_markers
