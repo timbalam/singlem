@@ -11,12 +11,10 @@ from .archive_otu_table import ArchiveOtuTable, ArchiveOtuTableEntry
 from .metapackage import Metapackage
 from .taxonomy import *
 
-import os
-
 DEFAULT_TRIM_PERCENT = 10
 DEFAULT_MIN_TAXON_COVERAGE = 0.35
 DEFAULT_GENOME_MIN_TAXON_COVERAGE = 0.1
-DEFAULT_RANK_PENALTY = [2, 1.8, 1.6, 1.4, 1, 0.5, 0.1, 0.01] #rdpcofgs
+DEFAULT_RANK_PENALTY = [12, 10, 6, 3.5, 2.5, 2, 1.5, 0.01] #rdpcofgs
 
 # Set CSV field limit to deal with pipe --output-extras as per
 # https://github.com/wwood/singlem/issues/89 following
@@ -155,7 +153,8 @@ class Condenser:
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
             condensed_otus = self._apply_nonneg_matrix_factorisation(sample, sample_otus,
                                                                      genes_per_domain = target_domains,
-                                                                     coverage_rank_penalty = DEFAULT_RANK_PENALTY)
+                                                                     coverage_rank_penalty = DEFAULT_RANK_PENALTY,
+                                                                     trim_percent = trim_percent)
             logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
         
         else:
@@ -707,10 +706,10 @@ class Condenser:
         regularised_augment_hits = (
             coverage_rank_penalty is not None and max(coverage_rank_penalty) > 0
         )
-        anc_to_child_to_count = defaultdict(lambda: defaultdict(lambda: 0))
+        par_to_child_to_count = defaultdict(lambda: defaultdict(lambda: 0))
         for otu in sample_otus:
             taxon_to_prev = {}
-            child_to_anc = {}
+            child_to_par = {}
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
             good_taxonomies = otu.good_taxonomies()
             if (
@@ -730,15 +729,15 @@ class Condenser:
                             child_tax = None
                             for anc_tax in TaxonomyUtils.ancestor_taxonomies(clean_tax):
                                 if child_tax is not None:
-                                    child_to_anc[child_tax] = anc_tax
+                                    child_to_par[child_tax] = anc_tax
                                 child_tax = anc_tax
 
                 if regularised_augment_hits:
-                    otu_to_best_hits.append((child_to_anc, taxon_to_prev, otu.marker, otu.coverage))
+                    otu_to_best_hits.append((child_to_par, taxon_to_prev, otu.marker, otu.coverage))
             
                     # count unique parent-child pairs.
-                    for child_tax, anc_tax in child_to_anc.items():
-                        anc_to_child_to_count[anc_tax][child_tax] += 1
+                    for child_tax, par_tax in child_to_par.items():
+                        par_to_child_to_count[par_tax][child_tax] += 1
                 
                 else: 
                     otu_to_best_hits.append((taxon_to_prev, otu.marker, otu.coverage))
@@ -751,20 +750,15 @@ class Condenser:
         # to allow nmds to assign OTU abundances to higher levels.
         #taxon_to_marker_to_num_hits = {}
         if regularised_augment_hits:
-            for i, (child_to_anc, taxon_to_prev, marker, coverage) in enumerate(otu_to_best_hits):
-                for child_tax, anc_tax in child_to_anc.items():
-                    if child_tax not in anc_to_child_to_count:
+            for i, (child_to_par, taxon_to_prev, marker, coverage) in enumerate(otu_to_best_hits):
+                for child_tax, par_tax in child_to_par.items():
+                    if child_tax not in par_to_child_to_count:
                         # child is a leaf
                         continue
                     
-                    max_child_child_count = max(anc_to_child_to_count[child_tax].values())
+                    max_child_child_count = max(par_to_child_to_count[child_tax].values())
 
-                    if anc_to_child_to_count[anc_tax][child_tax] > max_child_child_count:
-                        # if child_tax not in taxon_to_marker_to_num_hits:
-                        #     taxon_to_marker_to_num_hits[child_tax] = {}
-                        # if marker not in taxon_to_marker_to_num_hits[child_tax]:
-                        #     taxon_to_marker_to_num_hits[child_tax][marker] = 0
-                        # taxon_to_marker_to_num_hits[child_tax][marker] += 1
+                    if par_to_child_to_count[par_tax][child_tax] > max_child_child_count:
                         taxon_to_coverage[child_tax] = [1, {}]
                         taxon_to_prev[child_tax] = 1
                 
@@ -784,6 +778,7 @@ class Condenser:
         #         taxon_to_prev[tax] /= taxon_to_marker_to_num_hits[tax][marker]
         
         num_steps = 0
+        min_num_steps = 50
         while True: # while not converged
             num_steps += 1
             
@@ -910,14 +905,14 @@ class Condenser:
 
             # prevalence values can be unstable when a taxon is absent
             # so iterate until coverages converge
-            need_another_iteration = max_coef_change > 0.001
+            need_another_iteration = num_steps < min_num_steps or max_coef_change > 0.001
             if not need_another_iteration:
                 break
 
             if num_steps % 100 == 0:
                 logging.info(f"Max coef change after {num_steps} iterations: {max_coef_change}")
                 logging.debug(f"{max_change_taxa} change from {max_change_current} to {max_change_update}")
-        
+
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
         rounded_taxon_to_coverage = {}
