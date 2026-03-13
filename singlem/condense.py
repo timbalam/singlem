@@ -14,7 +14,7 @@ from .taxonomy import *
 DEFAULT_TRIM_PERCENT = 10
 DEFAULT_MIN_TAXON_COVERAGE = 0.35
 DEFAULT_GENOME_MIN_TAXON_COVERAGE = 0.1
-DEFAULT_RANK_PENALTY = [12, 10, 6, 3.5, 2.5, 2, 1.5, 0.01] #rdpcofgs
+DEFAULT_RANK_PENALTY = [12, 10, 6, 4.5, 3, 2, 1.5, 0.01] #rdpcofgs
 
 # Set CSV field limit to deal with pipe --output-extras as per
 # https://github.com/wwood/singlem/issues/89 following
