@@ -151,12 +151,21 @@ class Condenser:
         if apply_nonneg_matrix_factorisation:
             logging.info("Converting DIAMOND IDs to taxons")
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
-            condensed_otus = self._apply_nonneg_matrix_factorisation(sample, sample_otus,
-                                                                     genes_per_domain = target_domains,
-                                                                     coverage_rank_penalty = DEFAULT_RANK_PENALTY,
-                                                                     trim_percent = trim_percent)
+            condensed_otus, coverage_parts_otus = self._apply_nonneg_matrix_factorisation(
+                sample,
+                sample_otus,
+                genes_per_domain = target_domains,
+                coverage_rank_penalty = DEFAULT_RANK_PENALTY,
+                trim_percent = trim_percent
+            )
+
             logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
         
+            if output_after_em_otu_table:
+                coverage_parts_otus.alignment_hmm_sha256s = 'na'
+                coverage_parts_otus.singlem_package_sha256s = 'na'
+                with open(output_after_em_otu_table, 'w') as f:
+                    coverage_parts_otus.write_to(f)
         else:
             if apply_query_expectation_maximisation:
                 sample_otus = self._apply_species_expectation_maximization(sample_otus, trim_percent, target_domains, taxon_marker_counts)
@@ -588,25 +597,21 @@ class Condenser:
         logging.debug("Total coverage by diamond: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD])))
         
         logging.info("Demultiplexing OTU best hits")
-        demux_otus = self._demultiplex_best_hits(sample_otus)
+        self._demultiplex_best_hits_in_place(sample_otus)
 
-        taxon_to_coverage = self._apply_nonneg_matrix_factorisation_core(demux_otus, **kwargs)
-
-        if taxon_to_coverage is None:
-            return demux_otus
+        taxon_to_coverage, coverage_parts_otus = self._apply_nonneg_matrix_factorisation_core(sample_otus, **kwargs)
 
         logging.info("Finished non-negative matrix factorisation")
 
         condensed_profile = self._condense_taxon_coverage(sample, taxon_to_coverage)
         
-        return condensed_profile
+        return condensed_profile, coverage_parts_otus
 
-    def _demultiplex_best_hits(self, sample_otus):
-        ''' Return a new OTU table where the OTUs have been demultiplexed. This
-        table likely contains OTUs which have the same window sequence.
-
-        For species that cannot be differentiated according to the eq class,
-        collapse them into an LCA taxonomy.
+    def _demultiplex_best_hits_in_place(self, sample_otus):
+        ''' Modifies sample_otus in place.
+        
+        Calculate equivalence classes and demultiplex best hits by
+        collapsing species that cannot be differentiated into an LCA taxonomy.
         '''
 
         marker_to_best_hit_taxonomy_sets = defaultdict(lambda: defaultdict(lambda: set()))
@@ -629,13 +634,8 @@ class Condenser:
         species_to_eq_class = self._gather_equivalence_classes_from_list_of_taxon_lists(all_best_hit_taxonomies) 
 
         # Generate new OTU table. Has to be an Archive because this method is run pre-EM.
-        new_otu_table = ArchiveOtuTable()
-        new_otu_table.fields = sample_otus.fields
         for otu in sample_otus:
-            if (
-                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
-                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
-                    ):
+            if otu.taxonomy_assignment_method() in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD):
                 demux_best_hits = set()
                 best_hit_taxonomies = otu.equal_best_hit_taxonomies()
                 for best_hit_tax in best_hit_taxonomies:
@@ -648,10 +648,7 @@ class Condenser:
                         raise Exception("shouldn't happen?") #demux_best_hits.add(best_hit_tax)
 
                 otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = sorted(demux_best_hits)
-                new_otu_table.add([otu])
-            else:
-                new_otu_table.add([otu])
-        return new_otu_table
+        return None
 
     def _condense_taxon_coverage(self, sample, taxon_to_coverage):
 
@@ -732,15 +729,15 @@ class Condenser:
                                     child_to_par[child_tax] = anc_tax
                                 child_tax = anc_tax
 
-                if regularised_augment_hits:
-                    otu_to_best_hits.append((child_to_par, taxon_to_prev, otu.marker, otu.coverage))
+            if regularised_augment_hits:
+                otu_to_best_hits.append((child_to_par, taxon_to_prev, otu))
+        
+                # count unique parent-child pairs.
+                for child_tax, par_tax in child_to_par.items():
+                    par_to_child_to_count[par_tax][child_tax] += 1
             
-                    # count unique parent-child pairs.
-                    for child_tax, par_tax in child_to_par.items():
-                        par_to_child_to_count[par_tax][child_tax] += 1
-                
-                else: 
-                    otu_to_best_hits.append((taxon_to_prev, otu.marker, otu.coverage))
+            else: 
+                otu_to_best_hits.append((taxon_to_prev, otu))
 
         # If using regularisation:
         # Second pass to initialise OTU for best hit taxa
@@ -750,7 +747,7 @@ class Condenser:
         # to allow nmds to assign OTU abundances to higher levels.
         #taxon_to_marker_to_num_hits = {}
         if regularised_augment_hits:
-            for i, (child_to_par, taxon_to_prev, marker, coverage) in enumerate(otu_to_best_hits):
+            for i, (child_to_par, taxon_to_prev, otu) in enumerate(otu_to_best_hits):
                 for child_tax, par_tax in child_to_par.items():
                     if child_tax not in par_to_child_to_count:
                         # child is a leaf
@@ -763,9 +760,9 @@ class Condenser:
                         taxon_to_prev[child_tax] = 1
                 
                 # update in place!
-                otu_to_best_hits[i] = (taxon_to_prev, marker, coverage)
+                otu_to_best_hits[i] = (taxon_to_prev, otu)
 
-        if len(taxon_to_coverage) == 0: return None
+        if len(taxon_to_coverage) == 0: return None, sample_otus
         
         # Don't do this, regularise instead
         # # The OTU prevalence is evenly divided per taxon among OTUs for a gene. 
@@ -783,32 +780,22 @@ class Condenser:
             num_steps += 1
             
             # NMDS update for each OTU prevalance is as follows:
-            # - No regularisation:
             #   Each current OTU-taxon prevalence is scaled by the ratio of the measured OTU
             #   coverage to the expected OTU coverage
             #   (sum of current OTU-taxon prevalence * current taxon coverage over
             #   the OTU's best hit taxa).
-            # - L1 regularisation:
-            #   Each current OTU-taxon prevalence is scaled by the ratio of the larger of
-            #   - measured OTU coverage minus rank-based L1 prevalence penalty per unit of coverage; or
-            #   - a non-negative minimum scaling factor per unit of coverage
-            #   to the expected OTU coverage.
             
             # NMDS update for taxon coverage is as follows:
             # - No regularisation:
             #   No NMDS update for coverage as degenerate case (1-dimensional output)
             # - L1 regularisation:
-            #   Each current taxon coverage is scaled by the ratio of the larger of
-            #   - expected measured OTU coverage part
+            #   Each current taxon coverage is scaled by the larger of
+            #   - 1 minus the ratio of rank-based L1 coverage penalty to
+            #     'explained' OTU coverage
             #     (sum of updated OTU-taxon prevalence * measured OTU coverage
-            #     over all OTUs where the taxon is best hit)
-            #     minus rank-based L1 coverage penalty; or
-            #   - a non-negative minimum scaling factor
-            #   to the updated expected taxon coverage
-            #   (sum of updated OTU-taxon prevalence * expected OTU coverage
-            #   over all OTU where the taxon is best hit).
-            #   The expected OTU coverage is calculated as above
-            #   but using the updated OTU-taxon prevalence.
+            #     over all OTUs where the taxon is best hit); or
+            #   - the ratio of a non-negative minimum scaling factor to
+            #     'explained' OTU coverage.
             
             # Coverage normalisation involves scaling
             # the updated prevalence values within a marker and taxon
@@ -820,7 +807,9 @@ class Condenser:
             # to help account for mis-assigned markers.
             
             # First pass over otus
-            for taxon_to_prev, marker, measured_otu_coverage in otu_to_best_hits:
+            for taxon_to_prev, otu in otu_to_best_hits:
+                marker = otu.marker
+                measured_otu_coverage = otu.coverage
                 
                 # First pass over best hit taxa
                 current_expected_otu_coverage = sum(prev * taxon_to_coverage[tax][0] for tax, prev in taxon_to_prev.items())
@@ -854,7 +843,8 @@ class Condenser:
             # Second pass over OTUs
             # after calculation of gene-wise totals
             # but before they have NMDS coverage updates applied
-            for taxon_to_prev, marker, measured_otu_coverage in otu_to_best_hits:
+            for taxon_to_prev, otu in otu_to_best_hits:
+                marker = otu.marker
 
                 # Third pass over best hit taxa
                 for tax, updated_prev in taxon_to_prev.items():
@@ -913,6 +903,8 @@ class Condenser:
                 logging.info(f"Max coef change after {num_steps} iterations: {max_coef_change}")
                 logging.debug(f"{max_change_taxa} change from {max_change_current} to {max_change_update}")
 
+        logging.info("All taxon EM converged in {} steps".format(num_steps))
+        
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
         rounded_taxon_to_coverage = {}
@@ -921,9 +913,29 @@ class Condenser:
             if cov2 > 0:
                 rounded_taxon_to_coverage[tax] = cov2
 
-        logging.info("All taxon EM converged in {} steps".format(num_steps))
+        coverage_parts_otus = ArchiveOtuTable()
+        coverage_parts_otus.fields = sample_otus.fields
+        for taxon_to_prev, otu in otu_to_best_hits:
+            if len(taxon_to_prev) == 0:
+                coverage_parts_otus.add([otu])
+            else:
+                for tax, prev in taxon_to_prev.items():
+                    try:
+                        coverage = rounded_taxon_to_coverage[tax]
+                    except KeyError:
+                        continue
+                    
+                    part = round(prev * coverage, 3)
+                    if part > 0:
+                        new_otu = ArchiveOtuTableEntry()
+                        new_otu.data = otu.data.copy()
+                        new_otu.data[ArchiveOtuTable.TAXONOMY_FIELD_INDEX] = tax
+                        new_otu.data[ArchiveOtuTable.COVERAGE_FIELD_INDEX] = part
+                        logging.debug("Adding OTU taxonomy {} with coverage {}".format(tax, new_otu.coverage))
+                        coverage_parts_otus.add([new_otu])
 
-        return rounded_taxon_to_coverage
+        return rounded_taxon_to_coverage, coverage_parts_otus
+
 
     def _apply_species_expectation_maximization(self, sample_otus, trim_percent, genes_per_domain, taxon_marker_counts):
         logging.info("Applying species-wise expectation maximization algorithm to OTU table")
