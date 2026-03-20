@@ -126,14 +126,8 @@ class Tests(unittest.TestCase):
             species_to_coverage,
             species_to_coverage_zero_reg
         )
-        new_otus = ArchiveOtuTable
-        new_otus.fields = otus.fields
-        new_otus.data = [
-            ['g1', 'sample1', 'seq1', 1, 9, 'Root; d__Bacteria; p; c; o; f; g; tax1', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
-            ['g2', 'sample1', 'seq2', 1, 9, 'Root; d__Bacteria; p; c; o; f; g; tax1', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD, []]
-        ]
         self.assertEqual(
-            new_otus.data,
+            otus.data,
             coverage_parts_otus.data
         )
     
@@ -227,14 +221,8 @@ class Tests(unittest.TestCase):
             {'Root; d__Bacteria; p; c; o; f; g': 4.902},
             species_to_coverage
         )
-        new_otus = ArchiveOtuTable()
-        new_otus.fields = ArchiveOtuTable.FIELDS_VERSION5
-        new_otus.data = [
-            ['g1', 'sample1', 'seq1', 1, 4.902, 'Root; d__Bacteria; p; c; o; f; g', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD, []],
-            ['g2', 'sample1', 'seq2', 1, 4.902, 'Root; d__Bacteria; p; c; o; f; g', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []]
-        ]
         self.assertEqual(
-            new_otus.data,
+            otus.data,
             coverage_parts_otus.data
         )
 
@@ -364,34 +352,6 @@ class Tests(unittest.TestCase):
             otus.data
         )
         
-    def test_find_missing_genes_none_missing(self):
-        otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
-        otus.data = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g2', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
-        ]
-        genes_per_domain = {'Bacteria': ['g1', 'g2']}
-        expected = {'Root; d__Bacteria; p; c; o; f; gen1; tax1': set()}
-        self.assertEqual(
-            expected,
-            Condenser()._find_missing_genes(otus, genes_per_domain)
-        )
-        
-    def test_find_missing_genes_1gene1(self):
-        otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
-        otus.data = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g2', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1'],QUERY_BASED_ASSIGNMENT_METHOD],
-        ]
-        genes_per_domain = {'Bacteria': ['g1', 'g2']}
-        expected = {'Root; d__Bacteria; p; c; o; f; gen1; tax1': {'g2'}, 'Root; d__Bacteria; p; c; o; f; gen1': {'g1'}}
-        self.assertEqual(
-            expected,
-            Condenser()._find_missing_genes(otus, genes_per_domain)
-        )
-
 if __name__ == "__main__":
     import logging
     # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')

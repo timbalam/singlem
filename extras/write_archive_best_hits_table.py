@@ -99,10 +99,9 @@ def debug_write_archive(archive_otu_table, metapackage_path, hits_table):
                                 clean_hits.append(clean_tax)
 
                                 # track ancestors of best hit taxa.
-                                child_tax = None
+                                child_tax = clean_tax
                                 for anc_tax in TaxonomyUtils.ancestor_taxonomies(clean_tax):
-                                    if child_tax is not None:
-                                        child_to_anc[child_tax] = anc_tax
+                                    child_to_anc[child_tax] = anc_tax
                                     child_tax = anc_tax
                         
                         clean_best_hits.append(clean_hits)

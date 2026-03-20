@@ -48,6 +48,8 @@ class TaxonomyUtils:
     @staticmethod
     def ancestor_taxonomies(taxonomy_string):
         tax = [t.strip() for t in taxonomy_string.split(';') if t.strip() != '']
+        if len(tax) > 0:
+            tax = tax[:-1]
         while len(tax) > 0:
             yield '; '.join(tax)
             tax = tax[:-1]
