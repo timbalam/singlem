@@ -226,6 +226,33 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
 
+    def test_apply_nonneg_matrix_factorisation_core_exparts_mask(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1, 12, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq2', 1, 3, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g2', 'sample1', 'seq3', 1, 11, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g2', 'sample1', 'seq4', 1, 4, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g3', 'sample1', 'seq5', 1, 15, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []]
+        ]
+        species_to_coverage, coverage_parts_otus = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2', 'g3']},
+                                                                                                       mask_otus = ["seq5"])
+        self.assertEqual(
+            {'Root; d__Bacteria; p; c; o; f; g; tax1': 11,
+             'Root; d__Bacteria; p; c; o; f; g; tax2': 4},
+            species_to_coverage
+        )
+        species_to_coverage_zero_cov_reg, _ = Condenser()._apply_nonneg_matrix_factorisation_core(
+            otus,
+            genes_per_domain = {'Bacteria': ['g1', 'g2', 'g3']},
+            coverage_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0],
+            mask_otus = ["seq5"])
+        self.assertEqual(
+            species_to_coverage,
+            species_to_coverage_zero_cov_reg
+        )
+    
     def test_gather_equivalence_classes_from_list_of_taxon_lists1(self):
         species_lists = [['tax1'], ['tax2']]
         expected = {

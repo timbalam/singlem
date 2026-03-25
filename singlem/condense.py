@@ -33,11 +33,8 @@ while True:
 class Condenser:
     """ Combines otu table output for each marker into a single otu table"""
 
-    def condense(self, **kwargs):
-        output_otu_table = kwargs.pop('output_otu_table')
-        krona_output_file = kwargs.pop('krona')
-        metapackage_path = kwargs.pop('metapackage_path', None)
-        metapackage = kwargs.pop('metapackage', None)
+    def condense(self, *, output_otu_table, krona_output_file,
+                 metapackage_path = None, metapackage = None, **kwargs):
 
         if metapackage_path:
             logging.info("Using the metapackage at {}".format(metapackage_path))
@@ -69,17 +66,18 @@ class Condenser:
 
         logging.info("Finished condense")
 
-    def _condense_to_otu_table(self, metapackage, **kwargs):
-        input_otu_table = kwargs.pop('input_streaming_otu_table')
-        viral_mode = kwargs.pop('viral_mode', False)
-        trim_percent = kwargs.pop('trim_percent', DEFAULT_TRIM_PERCENT) / 100
-        min_taxon_coverage = kwargs.pop('min_taxon_coverage', DEFAULT_MIN_TAXON_COVERAGE)
-        # apply_expectation_maximisation = kwargs.pop('apply_expectation_maximisation')
-        output_after_em_otu_table = kwargs.pop('output_after_em_otu_table', False)
-        apply_nonneg_matrix_factorisation = kwargs.pop('apply_nonneg_matrix_factorisation', False)
+    def _condense_to_otu_table(self, metapackage, *, input_otu_table,
+                               viral_mode = False,
+                               min_taxon_coverage = DEFAULT_MIN_TAXON_COVERAGE,
+                               output_after_em_otu_table = False,
+                               apply_nonneg_matrix_factorisation = False,
+                               trim_percent = DEFAULT_TRIM_PERCENT,
+                               mask_otus = None,
+                               **kwargs):
         if len(kwargs) > 0:
             raise Exception("Unexpected arguments detected: %s" % kwargs)
         logging.info("Using minimum taxon coverage of {}".format(min_taxon_coverage))
+        trim_percent /= 100
 
         markers = {} # set of markers used to the domains they target
         
@@ -114,12 +112,25 @@ class Condenser:
 
             logging.debug("Processing sample {} ..".format(sample))
             apply_diamond_expectation_maximisation = True
-            yield self._condense_a_sample(sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage, 
-                True, apply_diamond_expectation_maximisation, metapackage, output_after_em_otu_table, viral_mode, apply_nonneg_matrix_factorisation)
+            yield self._condense_a_sample(sample, sample_otus, markers = markers,
+                                          target_domains = target_domains,
+                                          trim_percent = trim_percent,
+                                          min_taxon_coverage = min_taxon_coverage,
+                                          apply_query_expectation_maximisation = True,
+                                          apply_diamond_expectation_maximisation = apply_diamond_expectation_maximisation,
+                                          metapackage = metapackage,
+                                          output_after_em_otu_table = output_after_em_otu_table,
+                                          viral_mode = viral_mode,
+                                          apply_nonneg_matrix_factorisation = apply_nonneg_matrix_factorisation,
+                                          mask_otus = mask_otus)
 
-    def _condense_a_sample(self, sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage, 
-            apply_query_expectation_maximisation, apply_diamond_expectation_maximisation, metapackage,
-            output_after_em_otu_table, viral_mode, apply_nonneg_matrix_factorisation):
+    def _condense_a_sample(self, sample, sample_otus, *,
+                           markers, target_domains, trim_percent,
+                           min_taxon_coverage, apply_query_expectation_maximisation,
+                           apply_diamond_expectation_maximisation, metapackage,
+                           output_after_em_otu_table, viral_mode, 
+                           apply_nonneg_matrix_factorisation,
+                           mask_otus):
 
         # Remove off-target OTUs genes
         logging.debug("Total OTU coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
@@ -157,7 +168,8 @@ class Condenser:
                 sample_otus,
                 genes_per_domain = target_domains,
                 coverage_rank_penalty = DEFAULT_RANK_PENALTY,
-                trim_percent = trim_percent
+                trim_percent = trim_percent,
+                mask_otus = mask_otus
             )
 
             logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
@@ -663,7 +675,8 @@ class Condenser:
                                                 genes_per_domain,
                                                 trim_percent = 0,
                                                 coverage_rank_penalty = None,
-                                                min_scale_factor = 1e-3):
+                                                min_scale_factor = 1e-3,
+                                                mask_otus = None):
         
         # Set up initial conditions. The coverage of each species is set to 1.
         taxon_to_coverage = {}
@@ -681,6 +694,7 @@ class Condenser:
             child_to_par = {}
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
             good_taxonomies = otu.good_taxonomies()
+            mask = mask_otus is not None and otu.sequence in mask_otus
             if (
                     (best_hit_taxonomies is not None or good_taxonomies is not None)
                     and otu.taxonomy_assignment_method()
@@ -712,14 +726,14 @@ class Condenser:
                                 child_tax = anc_tax
 
             if regularised_augment_hits:
-                otu_to_best_hits.append((child_to_par, taxon_to_prev, otu))
+                otu_to_best_hits.append((mask, child_to_par, taxon_to_prev, otu))
         
                 # count unique parent-child pairs.
                 for child_tax, par_tax in child_to_par.items():
                     par_to_child_to_count[par_tax][child_tax] += 1
             
             else: 
-                otu_to_best_hits.append((taxon_to_prev, otu, 0))
+                otu_to_best_hits.append((mask, taxon_to_prev, otu, 0))
 
         # If using regularisation:
         # Second pass to initialise OTU for best hit taxa
@@ -728,7 +742,7 @@ class Condenser:
         # (this restriction avoids adding degenerate ancestor taxa)
         # to allow nmds to assign OTU abundances to higher levels.
         if regularised_augment_hits:
-            for i, (child_to_par, taxon_to_prev, otu) in enumerate(otu_to_best_hits):
+            for i, (mask, child_to_par, taxon_to_prev, otu) in enumerate(otu_to_best_hits):
                 marker = otu.marker
                 for child_tax, par_tax in child_to_par.items():
                     if child_tax not in par_to_child_to_count:
@@ -752,7 +766,7 @@ class Condenser:
                         taxon_to_prev[child_tax] = (0, 1)
                 
                 # update in place!
-                otu_to_best_hits[i] = (taxon_to_prev, otu, 0)
+                otu_to_best_hits[i] = (mask, taxon_to_prev, otu, 0)
 
         if len(taxon_to_coverage) == 0: return None, sample_otus
                         
@@ -760,7 +774,7 @@ class Condenser:
         # This maintains the initial assumption of equal species abundance,
         # and weighs more specific ranks more strongly initially,
         # which is important when including best hits for higher rank taxa.
-        for (taxon_to_prev, otu, _) in otu_to_best_hits:
+        for (_, taxon_to_prev, otu, _) in otu_to_best_hits:
             marker = otu.marker
             for tax, (current_prev, next_prev) in taxon_to_prev.items():
                 (_, _, gene_to_prev) = taxon_to_coverage[tax]
@@ -806,20 +820,31 @@ class Condenser:
             # to help account for mis-assigned markers.
             
             # First pass over otus
-            for i, (taxon_to_prev, otu, _) in enumerate(otu_to_best_hits):
+            for i, (mask, taxon_to_prev, otu, _) in enumerate(otu_to_best_hits):
                 marker = otu.marker
-                measured_coverage = otu.coverage
                 
                 # First pass over best hit taxa
-                expected_coverage = sum(prev * taxon_to_coverage[tax][1] for tax, (_, prev) in taxon_to_prev.items())
+                expected_coverage = sum(
+                    prev * taxon_to_coverage[tax][1]
+                    for tax, (_, prev) in taxon_to_prev.items()
+                    if taxon_to_coverage[tax][1] > 0
+                )
                 # update otu list in place! to track expected coverage
-                otu_to_best_hits[i] = (taxon_to_prev, otu, expected_coverage)
-
+                otu_to_best_hits[i] = (mask, taxon_to_prev, otu, expected_coverage)
+                
+                # replace measured coverage with expected for masked otus
+                # when cross-validating
+                measured_coverage = expected_coverage if mask else otu.coverage
+                
                 # Second pass over best hit taxa
                 for tax, (_, current_prev) in taxon_to_prev.items():
                     
                     # NMDS updates to OTU-taxon prevalences
-                    next_prev = current_prev * measured_coverage / expected_coverage
+                    next_prev = (
+                        current_prev * measured_coverage / expected_coverage
+                        if expected_coverage > 0
+                        else np.nan
+                    ) 
 
                     # Calculate:
                     # - gene-wise prevalence totals (for coverage normalisation)
@@ -841,7 +866,12 @@ class Condenser:
                     taxon_to_prev[tax] = (current_prev, next_prev)
                 
                 # check
-                assert round(sum(next_prev * taxon_to_coverage[tax][1] for tax, (_, next_prev) in taxon_to_prev.items()), 6) == round(measured_coverage, 6)
+                assert (
+                    expected_coverage == 0
+                    or mask
+                    or round(sum(next_prev * taxon_to_coverage[tax][1] 
+                                 for tax, (_, next_prev) in taxon_to_prev.items()), 6) == round(measured_coverage, 6)
+                )
             
             # Pass over taxa
             for tax, (_, current_coverage, gene_to_prev) in taxon_to_coverage.items():
@@ -856,9 +886,13 @@ class Condenser:
                             min_scale_factor / explained_coverage
                         )
 
-                        cov_updates.append(total_prev * penalty_factor)
+                        cov_updates.append(
+                            0
+                            if np.isnan(total_prev) or np.isnan(penalty_factor)
+                            else total_prev * penalty_factor
+                        )
                 else:
-                    cov_updates = list(gene_to_prev.values())
+                    cov_updates = [0 if np.isnan(prev) else prev for prev in gene_to_prev.values()]
                 
                 num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
                 
@@ -876,7 +910,7 @@ class Condenser:
             max_change_id = None
             max_change_current = None
             max_change_update = None
-            for id, (taxon_to_prev, otu, _) in enumerate(otu_to_best_hits):
+            for id, (_, taxon_to_prev, otu, _) in enumerate(otu_to_best_hits):
                 marker = otu.marker
 
                 # Third pass over best hit taxa
@@ -927,15 +961,27 @@ class Condenser:
         coverage_parts_otus = ArchiveOtuTable()
         coverage_parts_otus.fields = sample_otus.fields
         loss = 0
-        for (taxon_to_prev, otu, _) in otu_to_best_hits:
-            if len(taxon_to_prev) == 0:
-                coverage_parts_otus.add([otu])
-                loss += otu.coverage
+        mask_loss = 0
+        for (mask, taxon_to_prev, otu, _) in otu_to_best_hits:
+            expected_coverage = sum(
+                next_prev * taxon_to_coverage[tax][1]
+                for tax, (_, next_prev) in taxon_to_prev.items()
+                if taxon_to_coverage[tax][1] > 0
+            )
+            
+            if mask:
+                mask_loss += (expected_coverage - otu.coverage) ** 2
             else:
-                expected_coverage = sum(next_prev * taxon_to_coverage[tax][1] for tax, (_, next_prev) in taxon_to_prev.items())
-                
                 loss += (expected_coverage - otu.coverage) ** 2
 
+            if expected_coverage == 0:
+                new_otu = ArchiveOtuTableEntry()
+                new_otu.data = otu.data.copy()
+                new_otu.data[ArchiveOtuTable.TAXONOMY_FIELD_INDEX] = "Root"
+                new_otu.data[ArchiveOtuTable.COVERAGE_FIELD_INDEX] = otu.coverage
+                logging.debug(f"Adding OTU taxonomy {new_otu.taxonomy} with coverage {new_otu.coverage}")
+                coverage_parts_otus.add([new_otu])
+            else:
                 for tax, (_, next_prev) in taxon_to_prev.items():
                     try:
                         _, next_coverage, _ = taxon_to_coverage[tax]
@@ -949,11 +995,13 @@ class Condenser:
                         new_otu.data = otu.data.copy()
                         new_otu.data[ArchiveOtuTable.TAXONOMY_FIELD_INDEX] = tax
                         new_otu.data[ArchiveOtuTable.COVERAGE_FIELD_INDEX] = part
-                        logging.debug("Adding OTU taxonomy {} with coverage {}".format(tax, new_otu.coverage))
+                        logging.debug(f"Adding OTU taxonomy {new_otu.taxonomy} with coverage {new_otu.coverage}")
                         coverage_parts_otus.add([new_otu])
         
         logging.info(f"NMF loss {sqrt(loss)}")
-        logging.info(f"NMF regularised loss {sqrt(loss) + reg_loss}")
+        if mask_otus is not None:
+            logging.info(f"NMF mask loss {sqrt(mask_loss)}")
+        logging.info(f"NMF penalised loss {sqrt(loss) + reg_loss}")
 
         return rounded_taxon_to_coverage, coverage_parts_otus
 
