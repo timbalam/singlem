@@ -42,7 +42,7 @@ class TaxonomyUtils:
 
     @staticmethod
     def clean_taxonomy_string(taxonomy_string):
-        return re.sub(" *; *", "; ",
+        return re.sub(" *; *", ";",
                       taxonomy_string.strip())
 
     @staticmethod
@@ -51,7 +51,7 @@ class TaxonomyUtils:
         if len(tax) > 0:
             tax = tax[:-1]
         while len(tax) > 0:
-            yield '; '.join(tax)
+            yield ';'.join(tax)
             tax = tax[:-1]
     
     @staticmethod
@@ -61,7 +61,7 @@ class TaxonomyUtils:
             if taxonomy_string == ''
             else taxonomy_string
             if taxonomy_string.startswith('Root')
-            else 'Root; '+taxonomy_string
+            else 'Root;'+taxonomy_string
         )
 
     @staticmethod

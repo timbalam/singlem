@@ -1371,12 +1371,12 @@ def main():
         if not args.taxonomic_profile and not args.taxonomic_profile_krona:
             raise Exception("Either a krona or OTU table output must be specified for condense.")
         Condenser().condense(
-            input_streaming_otu_table = otus,
+            input_otu_table = otus,
             viral_mode = False,
             metapackage_path = args.metapackage,
             trim_percent = args.trim_percent,
             output_otu_table = args.taxonomic_profile,
-            krona = args.taxonomic_profile_krona,
+            output_krona = args.taxonomic_profile_krona,
             min_taxon_coverage = args.min_taxon_coverage,
             output_after_em_otu_table = args.output_after_em_otu_table,
             apply_nonneg_matrix_factorisation = args.apply_nonneg_matrix_factorisation,

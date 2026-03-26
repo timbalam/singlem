@@ -193,9 +193,9 @@ class Renew:
             otu_table_collection = StreamingOtuTableCollection()
             otu_table_collection.add_archive_otu_table_object(otu_table_object)
             Condenser().condense(
-                input_streaming_otu_table = otu_table_collection,
+                input_otu_table = otu_table_collection,
                 output_otu_table = output_taxonomic_profile,
-                krona = output_taxonomic_profile_krona,
+                output_krona = output_taxonomic_profile_krona,
                 metapackage = metapackage)
 
         logging.info("Renew is finished")

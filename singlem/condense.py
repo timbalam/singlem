@@ -34,9 +34,10 @@ while True:
 class Condenser:
     """ Combines otu table output for each marker into a single otu table"""
 
-    def condense(self, *, output_otu_table, krona_output_file,
+    def condense(self, *, output_otu_table, output_krona,
                  metapackage_path = None, metapackage = None, **kwargs):
 
+        krona_output_file = output_krona
         if metapackage_path:
             logging.info("Using the metapackage at {}".format(metapackage_path))
             metapackage = Metapackage.acquire(metapackage_path)
