@@ -7,6 +7,7 @@ import sys
 from queue import Queue
 from collections import defaultdict
 from math import sqrt
+from itertools import accumulate
 
 from .archive_otu_table import ArchiveOtuTable, ArchiveOtuTableEntry
 from .metapackage import Metapackage
@@ -72,7 +73,9 @@ class Condenser:
                                output_after_em_otu_table = False,
                                apply_nonneg_matrix_factorisation = False,
                                trim_percent = DEFAULT_TRIM_PERCENT,
-                               mask_otus = None,
+                               mask_otus_file = None,
+                               output_loss = None,
+                               rank_penalty_steps = None,
                                **kwargs):
         if len(kwargs) > 0:
             raise Exception("Unexpected arguments detected: %s" % kwargs)
@@ -108,6 +111,13 @@ class Condenser:
         #    if len(target_domains[domain]) in [1, 2]:
         #        raise Exception("Number of markers for all domains must either be >= 3 or equal to 0. Only {} markers for domain '{}' found".format(len(target_domains[domain]), domain))
 
+        mask_otus = None
+        if mask_otus_file is not None:
+            mask_otus = []
+            with open(mask_otus_file, "r") as f:
+                for line in f:
+                    mask_otus.append(line)
+        
         for sample, sample_otus in input_otu_table.each_sample_otus(generate_archive_otu_table=True):
 
             logging.debug("Processing sample {} ..".format(sample))
@@ -122,7 +132,10 @@ class Condenser:
                                           output_after_em_otu_table = output_after_em_otu_table,
                                           viral_mode = viral_mode,
                                           apply_nonneg_matrix_factorisation = apply_nonneg_matrix_factorisation,
-                                          mask_otus = mask_otus)
+                                          mask_otus = mask_otus,
+                                          rank_penalty_steps = rank_penalty_steps,
+                                          output_loss = output_loss
+                                          )
 
     def _condense_a_sample(self, sample, sample_otus, *,
                            markers, target_domains, trim_percent,
@@ -130,7 +143,7 @@ class Condenser:
                            apply_diamond_expectation_maximisation, metapackage,
                            output_after_em_otu_table, viral_mode, 
                            apply_nonneg_matrix_factorisation,
-                           mask_otus):
+                           mask_otus, rank_penalty_steps, output_loss):
 
         # Remove off-target OTUs genes
         logging.debug("Total OTU coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
@@ -161,19 +174,31 @@ class Condenser:
             taxon_marker_counts = metapackage.get_taxon_marker_counts(query_best_hits)
 
         if apply_nonneg_matrix_factorisation:
+            coverage_rank_penalty = (
+                DEFAULT_RANK_PENALTY
+                if rank_penalty_steps is not None
+                else
+                accumulate(rank_penalty_steps)
+            )
+            assert len(coverage_rank_penalty) == 8
             logging.info("Converting DIAMOND IDs to taxons")
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
-            condensed_otus, coverage_parts_otus = self._apply_nonneg_matrix_factorisation(
+            condensed_otus, coverage_parts_otus, loss = self._apply_nonneg_matrix_factorisation(
                 sample,
                 sample_otus,
                 genes_per_domain = target_domains,
-                coverage_rank_penalty = DEFAULT_RANK_PENALTY,
+                coverage_rank_penalty = coverage_rank_penalty,
                 trim_percent = trim_percent,
                 mask_otus = mask_otus
             )
 
             logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
         
+            if output_loss:
+                with open(output_loss, 'w') as f:
+                    for key, value in loss.items():
+                        f.write(f"{key}\t{value}\n")
+            
             if output_after_em_otu_table:
                 coverage_parts_otus.alignment_hmm_sha256s = 'na'
                 coverage_parts_otus.singlem_package_sha256s = 'na'
@@ -612,13 +637,13 @@ class Condenser:
         logging.info("Demultiplexing OTU best hits")
         self._demultiplex_best_hits_in_place(sample_otus)
 
-        taxon_to_coverage, coverage_parts_otus = self._apply_nonneg_matrix_factorisation_core(sample_otus, **kwargs)
+        taxon_to_coverage, coverage_parts_otus, loss = self._apply_nonneg_matrix_factorisation_core(sample_otus, **kwargs)
 
         logging.info("Finished non-negative matrix factorisation")
 
         condensed_profile = self._condense_taxon_coverage(sample, taxon_to_coverage)
         
-        return condensed_profile, coverage_parts_otus
+        return condensed_profile, coverage_parts_otus, loss
 
     def _demultiplex_best_hits_in_place(self, sample_otus):
         ''' Modifies sample_otus in place.
@@ -998,12 +1023,17 @@ class Condenser:
                         logging.debug(f"Adding OTU taxonomy {new_otu.taxonomy} with coverage {new_otu.coverage}")
                         coverage_parts_otus.add([new_otu])
         
-        logging.info(f"NMF loss {sqrt(loss)}")
+        loss_dict = {}
+        loss_dict['NMF loss'] = round(sqrt(loss), 3)
         if mask_otus is not None:
-            logging.info(f"NMF mask loss {sqrt(mask_loss)}")
-        logging.info(f"NMF penalised loss {sqrt(loss) + reg_loss}")
+            loss_dict['NMF mask loss'] = round(sqrt(mask_loss), 3)
+        if coverage_rank_penalty is not None:
+            loss_dict['NMF penalised loss'] = round(sqrt(loss) + reg_loss, 3)
+        
+        for key, value in loss_dict.items():
+            logging.info(f"{key} {value}")
 
-        return rounded_taxon_to_coverage, coverage_parts_otus
+        return rounded_taxon_to_coverage, coverage_parts_otus, loss_dict
 
 
     def _apply_species_expectation_maximization(self, sample_otus, trim_percent, genes_per_domain, taxon_marker_counts):

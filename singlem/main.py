@@ -273,6 +273,9 @@ def add_condense_arguments(parser):
         help='Set taxons with less coverage to coverage=0. [default: {}]'.format(current_default), default=current_default, type=float)
     current_default = CONDENSE_DEFAULT_TRIM_PERCENT
     optional_condense_arguments.add_argument('--trim-percent', type=float, default=current_default, help="percentage of markers to be trimmed for each taxonomy [default: {}]".format(current_default))
+    optional_condense_arguments.add_argument('--rank-penalty-steps', type=float, nargs = 8, help="Per-rank penalty increments for non-negative matrix factorisation (8)")
+    optional_condense_arguments.add_argument('--mask-otus-file', metavar = 'filename', help = 'name of file with OTU sequences to mask')
+    optional_condense_arguments.add_argument('--output-loss', metavar = 'filename', help = 'output non-negative matrix factorisation loss metrics')
 
 def generate_streaming_otu_table_from_args(args,
     input_prefix=False, query_prefix=False, archive_only=False, min_archive_otu_table_version=None):
@@ -1376,7 +1379,11 @@ def main():
             krona = args.taxonomic_profile_krona,
             min_taxon_coverage = args.min_taxon_coverage,
             output_after_em_otu_table = args.output_after_em_otu_table,
-            apply_nonneg_matrix_factorisation = args.apply_nonneg_matrix_factorisation)
+            apply_nonneg_matrix_factorisation = args.apply_nonneg_matrix_factorisation,
+            output_loss = args.output_loss,
+            rank_penalty_steps = args.rank_penalty_steps,
+            mask_otus_file = args.mask_otus_file
+        )
 
     elif args.subparser_name == 'trim_package_hmms':
         from singlem.trim_package_hmms import PackageHmmTrimmer
