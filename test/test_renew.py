@@ -108,9 +108,9 @@ class Tests(unittest.TestCase):
              '60',
              'False',
              'ATTAACAGTAGCTGAAGTTACTGACTTACGTTCACAATTACGTGAAGCTGGTGTTGAGTATAAAGTATACAAAAACACTATGGTACGTCGTGCAGCTGAA',
-             'Root; d__Bacteria; p__Firmicutes; c__Clostridia; o__Clostridiales; f__Lachnospiraceae; g__Blautia; s__Blautia_wexlerae',
+             'Root;d__Bacteria; p__Firmicutes; c__Clostridia; o__Clostridiales; f__Lachnospiraceae; g__Blautia; s__Blautia_wexlerae',
              'singlem_query_based',
-             'Root; d__Bacteria; p__Firmicutes_A; c__Clostridia; o__Lachnospirales; f__Lachnospiraceae; g__NK4A136; s__NK4A136 sp000421045 '
+             'Root;d__Bacteria; p__Firmicutes_A; c__Clostridia; o__Lachnospirales; f__Lachnospiraceae; g__NK4A136; s__NK4A136 sp000421045 '
              'Root; d__Bacteria; p__Proteobacteria; c__Deltaproteobacteria; o__Myxococcales; f__Myxococcaceae; g__Myxococcus; s__Myxococcus_stipitatus'
              ]
         ]
