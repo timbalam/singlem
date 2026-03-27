@@ -55,7 +55,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.0},
+            {'NMF loss': 0.0, 'NMF steps' : 50},
             loss
         )
 
@@ -77,10 +77,32 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.0},
+            {'NMF loss': 0.0, 'NMF steps' : 50},
             loss
         )
 
+    def test_apply_nonneg_matrix_factorisation_core_split1_max_steps(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 11,1.1,'Root;d__Bacteria;p;c;o;f;g;tax1','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD,[]],
+            ['g1', 'sample1', 'seq2', 11,1.1,'Root;d__Bacteria;p;c;o;f;g','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD,[]]
+        ]
+        species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']}, max_num_steps = 2)
+        self.assertEqual(
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 1.1,
+             'Root;d__Bacteria;p;c;o;f;g': 1.1},
+            species_to_coverage
+        )
+        self.assertEqual(
+            otus.data,
+            coverage_parts_otus.data
+        )
+        self.assertEqual(
+            {'NMF loss': 0.0, 'NMF steps' : 2},
+            loss
+        )
+    
     def test_apply_nonneg_matrix_factorisation_core_split2(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION5
@@ -99,7 +121,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.0},
+            {'NMF loss': 0.0, 'NMF steps': 50},
             loss
         )
 
@@ -143,7 +165,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 1.414},
+            {'NMF loss': 1.414, 'NMF steps' : 50},
             loss
         )
     
@@ -201,7 +223,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.0},
+            {'NMF loss': 0.0, 'NMF steps': 50},
             loss
         )
     
@@ -246,7 +268,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.139, 'NMF penalised loss': 0.629},
+            {'NMF loss': 0.139, 'NMF penalised loss': 0.629, 'NMF steps': 50},
             loss
         )
 
@@ -277,7 +299,7 @@ class Tests(unittest.TestCase):
             species_to_coverage_zero_cov_reg
         )
         self.assertEqual(
-            {'NMF loss': 0.0, 'NMF mask loss': 1.0},
+            {'NMF loss': 0.0, 'NMF mask loss': 1.0, 'NMF steps': 50},
             loss
         )
     

@@ -77,6 +77,7 @@ class Condenser:
                                mask_otus_file = None,
                                output_loss = None,
                                rank_penalty_steps = None,
+                               max_num_steps = None,
                                **kwargs):
         if len(kwargs) > 0:
             raise Exception("Unexpected arguments detected: %s" % kwargs)
@@ -117,7 +118,7 @@ class Condenser:
             mask_otus = []
             with open(mask_otus_file, "r") as f:
                 for line in f:
-                    mask_otus.append(line)
+                    mask_otus.append(line.strip())
         
         for sample, sample_otus in input_otu_table.each_sample_otus(generate_archive_otu_table=True):
 
@@ -135,7 +136,8 @@ class Condenser:
                                           apply_nonneg_matrix_factorisation = apply_nonneg_matrix_factorisation,
                                           mask_otus = mask_otus,
                                           rank_penalty_steps = rank_penalty_steps,
-                                          output_loss = output_loss
+                                          output_loss = output_loss,
+                                          max_num_steps = max_num_steps
                                           )
 
     def _condense_a_sample(self, sample, sample_otus, *,
@@ -144,7 +146,8 @@ class Condenser:
                            apply_diamond_expectation_maximisation, metapackage,
                            output_after_em_otu_table, viral_mode, 
                            apply_nonneg_matrix_factorisation,
-                           mask_otus, rank_penalty_steps, output_loss):
+                           mask_otus, rank_penalty_steps, output_loss,
+                           max_num_steps):
 
         # Remove off-target OTUs genes
         logging.debug("Total OTU coverage by query: {}".format(sum([o.coverage for o in sample_otus if o.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD])))
@@ -177,11 +180,11 @@ class Condenser:
         if apply_nonneg_matrix_factorisation:
             coverage_rank_penalty = (
                 DEFAULT_RANK_PENALTY
-                if rank_penalty_steps is not None
-                else
-                accumulate(rank_penalty_steps)
+                if rank_penalty_steps is None
+                else list(reversed(list(accumulate(rank_penalty_steps))))
             )
             assert len(coverage_rank_penalty) == 8
+            logging.info(f"Using coverage penalties {coverage_rank_penalty}")
             logging.info("Converting DIAMOND IDs to taxons")
             self._convert_diamond_best_hit_ids_to_taxonomies(metapackage, sample_otus)
             condensed_otus, coverage_parts_otus, loss = self._apply_nonneg_matrix_factorisation(
@@ -190,7 +193,8 @@ class Condenser:
                 genes_per_domain = target_domains,
                 coverage_rank_penalty = coverage_rank_penalty,
                 trim_percent = trim_percent,
-                mask_otus = mask_otus
+                mask_otus = mask_otus,
+                max_num_steps = max_num_steps
             )
 
             logging.info("Total profile coverage after condense domain to species: {}".format(sum([o.coverage for o in condensed_otus.breadth_first_iter()])))
@@ -702,7 +706,8 @@ class Condenser:
                                                 trim_percent = 0,
                                                 coverage_rank_penalty = None,
                                                 min_scale_factor = 1e-3,
-                                                mask_otus = None):
+                                                mask_otus = None,
+                                                max_num_steps = None):
         
         # Set up initial conditions. The coverage of each species is set to 1.
         taxon_to_coverage = {}
@@ -715,12 +720,15 @@ class Condenser:
             coverage_rank_penalty is not None and max(coverage_rank_penalty) > 0
         )
         par_to_child_to_count = defaultdict(lambda: defaultdict(lambda: 0))
+        n_mask = 0
         for otu in sample_otus:
             taxon_to_prev = {}
             child_to_par = {}
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
             good_taxonomies = otu.good_taxonomies()
             mask = mask_otus is not None and otu.sequence in mask_otus
+            if (mask):
+                n_mask += 1
             if (
                     (best_hit_taxonomies is not None or good_taxonomies is not None)
                     and otu.taxonomy_assignment_method()
@@ -760,6 +768,12 @@ class Condenser:
             
             else: 
                 otu_to_best_hits.append((mask, taxon_to_prev, otu, 0))
+
+        if mask_otus is not None:
+            if n_mask == 0:
+                logging.warning("Masking 0 OTUs for this sample")
+            else:
+                logging.info(f"Masking {n_mask} OTUs for this sample")
 
         # If using regularisation:
         # Second pass to initialise OTU for best hit taxa
@@ -805,14 +819,11 @@ class Condenser:
             for tax, (current_prev, next_prev) in taxon_to_prev.items():
                 (_, _, gene_to_prev) = taxon_to_coverage[tax]
                 # in place!
-                if marker not in gene_to_prev:
-                    import pdb; pdb.set_trace()
                 taxon_to_prev[tax] = (current_prev, next_prev / gene_to_prev[marker])
         
-        num_steps = 0
-        min_num_steps = 50
+        num_steps = 1
+        min_num_steps = 50 if max_num_steps is None else min(50, max_num_steps)
         while True: # while not converged
-            num_steps += 1
 
             # clear taxon_to_gene_to_prev
             for (_, _, gene_to_prev) in taxon_to_coverage.values():
@@ -869,8 +880,8 @@ class Condenser:
                     next_prev = (
                         current_prev * measured_coverage / expected_coverage
                         if expected_coverage > 0
-                        else np.nan
-                    ) 
+                        else current_prev
+                    )
 
                     # Calculate:
                     # - gene-wise prevalence totals (for coverage normalisation)
@@ -907,18 +918,17 @@ class Condenser:
                 if coverage_rank_penalty is not None:
                     cov_updates = []
                     for marker, [total_prev, explained_coverage] in gene_to_prev.items():
-                        penalty_factor = max(
-                            1 - coverage_rank_penalty[TaxonomyUtils.rank(tax)] / explained_coverage,
-                            min_scale_factor / explained_coverage
-                        )
+                        if explained_coverage == 0:
+                            cov_updates.append(0)
+                        else:
+                            penalty_factor = max(
+                                1 - coverage_rank_penalty[TaxonomyUtils.rank(tax)] / explained_coverage,
+                                min_scale_factor / explained_coverage
+                            )
 
-                        cov_updates.append(
-                            0
-                            if np.isnan(total_prev) or np.isnan(penalty_factor)
-                            else total_prev * penalty_factor
-                        )
+                            cov_updates.append(total_prev * penalty_factor)
                 else:
-                    cov_updates = [0 if np.isnan(prev) else prev for prev in gene_to_prev.values()]
+                    cov_updates = [prev for prev in gene_to_prev.values()]
                 
                 num_markers = len(genes_per_domain[tax.split(';')[1].strip().replace('d__','')])
                 
@@ -965,13 +975,18 @@ class Condenser:
             # so iterate until coverages converge
             need_another_iteration = num_steps < min_num_steps or max_coef_change > 0.001
             if not need_another_iteration:
+                logging.info(f"NMF converged")
                 break
 
             if num_steps % 100 == 0:
-                logging.info(f"Max coef change after {num_steps} iterations: {max_coef_change}")
+                logging.info(f"Max coef change after {num_steps} steps {max_coef_change}")
                 logging.debug(f"{max_change_taxa} OTU {max_change_id} changed from {max_change_current} to {max_change_update}")
 
-        logging.info(f"NMF converged in {num_steps} steps")
+            num_steps += 1
+            
+            if max_num_steps is not None and num_steps > max_num_steps:
+                logging.warning(f"NMF failed to converge after max steps")
+                break
         
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
@@ -1030,6 +1045,7 @@ class Condenser:
             loss_dict['NMF mask loss'] = round(sqrt(mask_loss), 3)
         if coverage_rank_penalty is not None:
             loss_dict['NMF penalised loss'] = round(sqrt(loss) + reg_loss, 3)
+        loss_dict['NMF steps'] = num_steps
         
         for key, value in loss_dict.items():
             logging.info(f"{key} {value}")

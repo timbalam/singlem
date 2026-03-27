@@ -276,6 +276,7 @@ def add_condense_arguments(parser):
     optional_condense_arguments.add_argument('--rank-penalty-steps', type=float, nargs = 8, help="Per-rank penalty increments for non-negative matrix factorisation (8)")
     optional_condense_arguments.add_argument('--mask-otus-file', metavar = 'filename', help = 'name of file with OTU sequences to mask')
     optional_condense_arguments.add_argument('--output-loss', metavar = 'filename', help = 'output non-negative matrix factorisation loss metrics')
+    optional_condense_arguments.add_argument('--max-num-steps', type=int, help = 'maximum number of non-negative matrix factorisation iteration steps')
 
 def generate_streaming_otu_table_from_args(args,
     input_prefix=False, query_prefix=False, archive_only=False, min_archive_otu_table_version=None):
@@ -1382,7 +1383,8 @@ def main():
             apply_nonneg_matrix_factorisation = args.apply_nonneg_matrix_factorisation,
             output_loss = args.output_loss,
             rank_penalty_steps = args.rank_penalty_steps,
-            mask_otus_file = args.mask_otus_file
+            mask_otus_file = args.mask_otus_file,
+            max_num_steps = args.max_num_steps
         )
 
     elif args.subparser_name == 'trim_package_hmms':
