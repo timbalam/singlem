@@ -16,7 +16,7 @@ from .taxonomy import *
 DEFAULT_TRIM_PERCENT = 10
 DEFAULT_MIN_TAXON_COVERAGE = 0.35
 DEFAULT_GENOME_MIN_TAXON_COVERAGE = 0.1
-DEFAULT_RANK_PENALTY = [12, 10, 6, 4.5, 3, 2, 1.5, 0.01] #rdpcofgs
+DEFAULT_RANK_PENALTY = [12., 10., 6., 4.5, 3., 2., 1.5, 0.01] #rdpcofgs
 
 # Set CSV field limit to deal with pipe --output-extras as per
 # https://github.com/wwood/singlem/issues/89 following
@@ -660,12 +660,14 @@ class Condenser:
         marker_to_best_hit_taxonomy_sets = defaultdict(lambda: defaultdict(lambda: set()))
         for otu in sample_otus:
             best_hit_taxonomies = otu.equal_best_hit_taxonomies()
-            if best_hit_taxonomies is not None and (
-                    otu.taxonomy_assignment_method() == QUERY_BASED_ASSIGNMENT_METHOD
-                    or otu.taxonomy_assignment_method() == DIAMOND_ASSIGNMENT_METHOD
-                    ):
-                for best_hit_tax in best_hit_taxonomies:
-                        marker_to_best_hit_taxonomy_sets[otu.marker][best_hit_tax] |= set(best_hit_taxonomies)
+            good_taxonomies = otu.good_taxonomies()
+            if (otu.taxonomy_assignment_method()
+                in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)):
+                for taxonomies in (best_hit_taxonomies, good_taxonomies):
+                    if taxonomies is not None:
+                        for best_hit_tax in taxonomies:
+                            marker_to_best_hit_taxonomy_sets[otu.marker][best_hit_tax] |= set(best_hit_taxonomies)
+                            marker_to_best_hit_taxonomy_sets[otu.marker][best_hit_tax] |= set(good_taxonomies)
 
         all_best_hit_taxonomy_sets = set()
         for best_hit_taxonomy_sets in marker_to_best_hit_taxonomy_sets.values():
@@ -678,19 +680,27 @@ class Condenser:
 
         # Generate new OTU table. Has to be an Archive because this method is run pre-EM.
         for otu in sample_otus:
-            if otu.taxonomy_assignment_method() in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD):
+            if (otu.taxonomy_assignment_method()
+                in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)):
                 demux_best_hits = set()
                 best_hit_taxonomies = otu.equal_best_hit_taxonomies()
-                for best_hit_tax in best_hit_taxonomies:
-                    if best_hit_tax in species_to_eq_class:
-                        # Convert eq_classes to LCA
-                        eq_class = species_to_eq_class[best_hit_tax] & set(best_hit_taxonomies)
-                        lca = TaxonomyUtils.lca_taxonomy_of_strings(eq_class)
-                        demux_best_hits.add(lca)
-                    else:
-                        raise Exception("shouldn't happen?") #demux_best_hits.add(best_hit_tax)
+                good_taxonomies = otu.good_taxonomies()
+                for taxonomies in (best_hit_taxonomies, good_taxonomies):
+                    if taxonomies is not None:
+                        for best_hit_tax in best_hit_taxonomies:
+                            try:
+                                # Convert eq_classes to LCA
+                                eq_class = species_to_eq_class[best_hit_tax] & (
+                                    set(best_hit_taxonomies) | set(good_taxonomies)
+                                )
+                            except KeyError:
+                                raise Exception("shouldn't happen?")
+                            
+                            lca = TaxonomyUtils.lca_taxonomy_of_strings(eq_class)
+                            demux_best_hits.add(lca)
 
                 otu.data[ArchiveOtuTable.EQUAL_BEST_HIT_TAXONOMIES_INDEX] = sorted(demux_best_hits)
+                otu.data[ArchiveOtuTable.GOOD_TAXONOMIES_FIELD_INDEX] = []
         return None
 
     def _condense_taxon_coverage(self, sample, taxon_to_coverage):
@@ -723,64 +733,68 @@ class Condenser:
         n_mask = 0
         for otu in sample_otus:
             taxon_to_prev = {}
-            child_to_par = {}
-            best_hit_taxonomies = otu.equal_best_hit_taxonomies()
-            good_taxonomies = otu.good_taxonomies()
             mask = mask_otus is not None and otu.sequence in mask_otus
             if (mask):
                 n_mask += 1
-            if (
-                    (best_hit_taxonomies is not None or good_taxonomies is not None)
-                    and otu.taxonomy_assignment_method()
-                    in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)
-                    ):
-                
+            if (otu.taxonomy_assignment_method()
+                in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)):
                 marker = otu.marker
+                best_hit_taxonomies = otu.equal_best_hit_taxonomies()
+                good_taxonomies = otu.good_taxonomies()
                 for taxonomies in (best_hit_taxonomies, good_taxonomies):
-                    for best_hit_tax in taxonomies:
-                        clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
-                        try:
-                            (_, _, gene_to_prev) = taxon_to_coverage[clean_tax]
-                        except KeyError:
-                            gene_to_prev = {}
-                            taxon_to_coverage[clean_tax] = (0, 1, gene_to_prev)
-                        
-                        try:
-                            gene_to_prev[marker] += 1
-                        except KeyError:
-                            gene_to_prev[marker] = 1
-                        
-                        taxon_to_prev[clean_tax] = (0, 1)
+                    if taxonomies is not None:
+                        for best_hit_tax in taxonomies:
+                            clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
 
-                        # track ancestors of best hit taxa.
-                        if regularised_augment_hits:
-                            child_tax = clean_tax
-                            for anc_tax in TaxonomyUtils.ancestor_taxonomies(clean_tax):
-                                child_to_par[child_tax] = anc_tax
-                                child_tax = anc_tax
+                            if clean_tax == 'Root':
+                                continue
+
+                            try:
+                                (_, _, gene_to_prev) = taxon_to_coverage[clean_tax]
+                            except KeyError:
+                                gene_to_prev = {}
+                                taxon_to_coverage[clean_tax] = (0., 1., gene_to_prev)
+                            
+                            try:
+                                gene_to_prev[marker] += 1
+                            except KeyError:
+                                gene_to_prev[marker] = 1
+                            
+                            taxon_to_prev[clean_tax] = (0., 1.)
 
             if regularised_augment_hits:
+                child_to_par = {}
+
+                # track ancestors of best hit taxa
+                # and count otus for each unique parent-child pair.
+                for clean_tax in taxon_to_prev.keys():
+                    child_tax = clean_tax
+                    for anc_tax in TaxonomyUtils.ancestor_taxonomies(clean_tax):
+                        if child_tax in child_to_par: # count OTU once per parent-child pair
+                            break
+                        child_to_par[child_tax] = anc_tax
+                        par_to_child_to_count[anc_tax][child_tax] += 1
+                        child_tax = anc_tax
+
                 otu_to_best_hits.append((mask, child_to_par, taxon_to_prev, otu))
-        
-                # count unique parent-child pairs.
-                for child_tax, par_tax in child_to_par.items():
-                    par_to_child_to_count[par_tax][child_tax] += 1
             
             else: 
-                otu_to_best_hits.append((mask, taxon_to_prev, otu, 0))
+                otu_to_best_hits.append((mask, taxon_to_prev, otu, 0.))
 
         if mask_otus is not None:
             if n_mask == 0:
                 logging.warning("Masking 0 OTUs for this sample")
             else:
                 logging.info(f"Masking {n_mask} OTUs for this sample")
-
+        
         # If using regularisation:
         # Second pass to initialise OTU for best hit taxa
-        # and taxa at higher ranks with strictly more aggregate hits
+        # and taxa at higher ranks with strictly more aggregate OTU hits
         # then any child taxon
         # (this restriction avoids adding degenerate ancestor taxa)
         # to allow nmds to assign OTU abundances to higher levels.
+        # Effectively, keep taxa which are assigned directly to OTUs,
+        # or have multiple descendent taxa assigned.
         if regularised_augment_hits:
             for i, (mask, child_to_par, taxon_to_prev, otu) in enumerate(otu_to_best_hits):
                 marker = otu.marker
@@ -796,17 +810,17 @@ class Condenser:
                             (_, _, gene_to_prev) = taxon_to_coverage[child_tax]
                         except KeyError:
                             gene_to_prev = {}
-                            taxon_to_coverage[child_tax] = (0, 1, gene_to_prev)
+                            taxon_to_coverage[child_tax] = (0., 1., gene_to_prev)
 
                         try:
                             gene_to_prev[marker] += 1
                         except KeyError:
                             gene_to_prev[marker] = 1
                         
-                        taxon_to_prev[child_tax] = (0, 1)
+                        taxon_to_prev[child_tax] = (0., 1.)
                 
                 # update in place!
-                otu_to_best_hits[i] = (mask, taxon_to_prev, otu, 0)
+                otu_to_best_hits[i] = (mask, taxon_to_prev, otu, 0.)
 
         if len(taxon_to_coverage) == 0: return None, sample_otus
                         
@@ -866,6 +880,8 @@ class Condenser:
                     for tax, (_, prev) in taxon_to_prev.items()
                     if taxon_to_coverage[tax][1] > 0
                 )
+                assert not np.isnan(expected_coverage)
+                
                 # update otu list in place! to track expected coverage
                 otu_to_best_hits[i] = (mask, taxon_to_prev, otu, expected_coverage)
                 
@@ -894,6 +910,7 @@ class Condenser:
                             gene_to_prev[marker][1] += next_prev * measured_coverage
                         except KeyError:
                             gene_to_prev[marker] = [next_prev, next_prev * measured_coverage]
+                        
                     else:
                         try:
                             gene_to_prev[marker] += next_prev
@@ -918,13 +935,14 @@ class Condenser:
                 if coverage_rank_penalty is not None:
                     cov_updates = []
                     for marker, [total_prev, explained_coverage] in gene_to_prev.items():
-                        if explained_coverage == 0:
+                        if explained_coverage == 0 or total_prev == 0:
                             cov_updates.append(0)
                         else:
                             penalty_factor = max(
                                 1 - coverage_rank_penalty[TaxonomyUtils.rank(tax)] / explained_coverage,
                                 min_scale_factor / explained_coverage
                             )
+                            assert not np.isnan(penalty_factor)
 
                             cov_updates.append(total_prev * penalty_factor)
                 else:
@@ -958,7 +976,7 @@ class Condenser:
                         gene_to_prev[marker][0]
                         if coverage_rank_penalty is not None else
                         gene_to_prev[marker]
-                    )
+                    ) if next_prev > 0 else 0
 
                     # updated value in place!
                     taxon_to_prev[tax] = (current_prev, next_prev)

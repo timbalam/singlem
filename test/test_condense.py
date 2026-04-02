@@ -346,12 +346,12 @@ class Tests(unittest.TestCase):
 
     def test_demultiplex_best_hits1(self):
         otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
         otus.data = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD, []],
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['tax1'],QUERY_BASED_ASSIGNMENT_METHOD, []],
         ]
         Condenser()._demultiplex_best_hits_in_place(otus)
         self.assertEqual(
@@ -361,12 +361,12 @@ class Tests(unittest.TestCase):
 
     def test_demultiplex_best_hits2(self):
         otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
         otus.data = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Rooter; tax1','Rooter; tax2'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Rooter; tax1','Rooter; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Rooter'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Rooter'], QUERY_BASED_ASSIGNMENT_METHOD, []],
         ]
         Condenser()._demultiplex_best_hits_in_place(otus)
         self.assertEqual(
@@ -376,14 +376,14 @@ class Tests(unittest.TestCase):
 
     def test_demultiplex_best_hits_1gene1(self):
         otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
         otus.data = [
-            ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD, []]
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'], QUERY_BASED_ASSIGNMENT_METHOD],
+            ['g1', 'sample1', 'seq1', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq2', 11,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'], QUERY_BASED_ASSIGNMENT_METHOD, []],
         ]
         Condenser()._demultiplex_best_hits_in_place(otus)
         self.assertEqual(
@@ -393,16 +393,16 @@ class Tests(unittest.TestCase):
 
     def test_demultiplex_best_hits_1gene2(self):
         otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
         otus.data = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2','Root; d__Bacteria; p;c;o;f;g; tax3'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax5','Root; d__Bacteria; p;c;o;f;g; tax4'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2','Root; d__Bacteria; p;c;o;f;g; tax3'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;g; tax5','Root; d__Bacteria; p;c;o;f;g; tax4'],QUERY_BASED_ASSIGNMENT_METHOD, []]
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p; c; o; f; g'],QUERY_BASED_ASSIGNMENT_METHOD, []]
         ]
         Condenser()._demultiplex_best_hits_in_place(otus)
         self.assertEqual(
@@ -412,16 +412,16 @@ class Tests(unittest.TestCase):
         
     def test_demultiplex_best_hits_2gene2(self):
         otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION4
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
         otus.data = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1','Root; d__Bacteria; p;c;o;f;gen1; tax2'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1','Root; d__Bacteria; p;c;o;f;gen1; tax2','Root; d__Bacteria; p;c;o;f;gen2; tax3'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;gen2; tax5','Root; d__Bacteria; p;c;o;f;gen2; tax4'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1','Root; d__Bacteria; p;c;o;f;gen1; tax2'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p;c;o;f;gen1; tax1','Root; d__Bacteria; p;c;o;f;gen1; tax2','Root; d__Bacteria; p;c;o;f;gen2; tax3'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p;c;o;f;gen2; tax5','Root; d__Bacteria; p;c;o;f;gen2; tax4'],QUERY_BASED_ASSIGNMENT_METHOD, []]
         ]
         expected = [
-            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; gen1'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f'],QUERY_BASED_ASSIGNMENT_METHOD],
-            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p; c; o; f; gen2'],QUERY_BASED_ASSIGNMENT_METHOD]
+            ['g1', 'sample1', 'seq1', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f; gen1'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq2', 1,1.1,'','','','','',['Root; d__Bacteria; p; c; o; f'],QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq3', 1,1.2,'','','','','',['Root; d__Bacteria; p; c; o; f; gen2'],QUERY_BASED_ASSIGNMENT_METHOD, []]
         ]
         Condenser()._demultiplex_best_hits_in_place(otus)
         self.assertEqual(
