@@ -136,7 +136,7 @@ TTTTGTTTAACCTAAAAGGAGTATCCAATGCTTGACCCCGTTGTGCAATCGGCCTTTGTTTTGATCCTTG\n'
         Run on SRR8653040.sra
         '''
         expected = 'gene    sample  sequence        num_hits        coverage        taxonomy\n' \
-            'S1.2.ribosomal_protein_L3_rplC  SRR8653040      GTTGATGTTACAGGTACTACGAAAGGTAAAGGATTCCAAGGGGCAATCAAACGTCACGGC    20       26.15    Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Lactobacillales; f__Enterococcaceae; g__Enterococcus; s__Enterococcus_faecalis\n' \
+            'S1.2.ribosomal_protein_L3_rplC  SRR8653040      GTTGATGTTACAGGTACTACGAAAGGTAAAGGATTCCAAGGGGCAATCAAACGTCACGGC    21       27.46    Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Lactobacillales; f__Enterococcaceae; g__Enterococcus; s__Enterococcus_faecalis\n' \
             'S1.2.ribosomal_protein_L3_rplC  SRR8653040      GTTGATGTTACAGGTACTACGAAAGGTAAAGGATTCCAAGGGGCAATCAAACGTTACAGC    1       1.31    Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Lactobacillales; f__Enterococcaceae; g__Enterococcus; s__Enterococcus_faecalis'
         cmd = f'{path_to_script} pipe --sra {path_to_data}/SRR8653040.sra --otu-table /dev/stdout --singlem-packages {path_to_data}/S1.2.ribosomal_protein_L3_rplC.gpkg.spkg/ --assignment-method diamond'
         self.assertEqualOtuTable(
@@ -149,7 +149,7 @@ TTTTGTTTAACCTAAAAGGAGTATCCAATGCTTGACCCCGTTGTGCAATCGGCCTTTGTTTTGATCCTTG\n'
         Run on SRR8653040.sra, which has 424064 reads. This test only runs on the first 200,000 reads.
         '''
         expected = 'gene    sample  sequence        num_hits        coverage        taxonomy\n' \
-            'S1.2.ribosomal_protein_L3_rplC  SRR8653040      GTTGATGTTACAGGTACTACGAAAGGTAAAGGATTCCAAGGGGCAATCAAACGTCACGGC    13       17.00    Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Lactobacillales; f__Enterococcaceae; g__Enterococcus; s__Enterococcus_faecalis\n' \
+            'S1.2.ribosomal_protein_L3_rplC  SRR8653040      GTTGATGTTACAGGTACTACGAAAGGTAAAGGATTCCAAGGGGCAATCAAACGTCACGGC    14       18.31    Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Lactobacillales; f__Enterococcaceae; g__Enterococcus; s__Enterococcus_faecalis\n' \
             'S1.2.ribosomal_protein_L3_rplC  SRR8653040      GTTGATGTTACAGGTACTACGAAAGGTAAAGGATTCCAAGGGGCAATCAAACGTTACAGC    1       1.31    Root; d__Bacteria; p__Firmicutes; c__Bacilli; o__Lactobacillales; f__Enterococcaceae; g__Enterococcus; s__Enterococcus_faecalis'
         cmd = f'{path_to_script} pipe --sra {path_to_data}/SRR8653040.sra --otu-table /dev/stdout --singlem-packages {path_to_data}/S1.2.ribosomal_protein_L3_rplC.gpkg.spkg/ --assignment-method diamond --read-chunk-number 1 --read-chunk-size 200000'
         self.assertEqualOtuTable(

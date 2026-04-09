@@ -61,6 +61,7 @@ toml = "*"
 python-build = "*"
 setuptools-scm = "*"
 gtdbtk = "==2.4.1" # Must match the version of GTDB release used to make the default metapackage.
+kingfisher = "*"
 
 [environments]
 dev = ["dev"]
