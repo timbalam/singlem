@@ -712,9 +712,7 @@ class Condenser:
     
     def _apply_nonneg_matrix_factorisation_core(self, sample_otus, *,
                                                 genes_per_domain,
-                                                trim_percent = 0,
                                                 coverage_rank_penalty = None,
-                                                min_scale_factor = 1e-3,
                                                 mask_otus = None,
                                                 max_num_steps = None):
         
@@ -740,7 +738,7 @@ class Condenser:
                                 continue
 
                             try:
-                                (_, _, gene_to_otu_to_prev) = taxon_to_params[clean_tax]
+                                (_, gene_to_otu_to_prev) = taxon_to_params[clean_tax]
                             except KeyError:
                                 gene_to_otu_to_prev = {}
                                 taxon_to_params[clean_tax] = (1, gene_to_otu_to_prev)
@@ -753,55 +751,88 @@ class Condenser:
                             if not mask:
                                 residue -= 1
                             otu_to_prev[i] = 1
-            residues.push(residue)
+            residues.append(residue)
             if mask:
-                masks.push(i)
+                masks.append(i)
 
         if mask_otus is not None:
             if len(masks) == 0:
                 logging.warning("Masking 0 OTUs for this sample")
             else:
                 logging.info(f"Masking {len(masks)} OTUs for this sample")
+        
+        # Include residue for an OTU with zero-abundance OTU for each
+        # targetted domain for each marker
+        genes_residues_per_domain = {}
+        for domain, markers in genes_per_domain.items():
+            domain_genes_residues = []
+            for marker in markers:
+                domain_genes_residues.append((marker, len(residues)))
+                residues.append(0)
+            genes_residues_per_domain[domain] = domain_genes_residues
+        for tax, (_, gene_to_otu_to_prev) in taxon_to_params.items():
+            for marker, ii in genes_residues_per_domain[TaxonomyUtils.domain(tax)]:
+                
+                try:
+                    otu_to_prev = gene_to_otu_to_prev[marker]
+                except KeyError:
+                    otu_to_prev = {}
+                    gene_to_otu_to_prev[marker] = otu_to_prev
+                
+                otu_to_prev[ii] = 1
+                residues[ii] -= 1
 
         if len(taxon_to_params) == 0: return None, sample_otus
         
         num_steps = 1
-        min_num_steps = 50 if max_num_steps is None else min(50, max_num_steps)
+        #min_num_steps = 50 if max_num_steps is None else min(50, max_num_steps)
         delta = 1e-4
         while True: # while not converged
 
-            # Pass over taxa
             max_coef_change = 0
             max_change_desc = ""
             max_change_current = np.nan
             max_change_update = np.nan
+
+            # Pass over taxa
             for tax, (coverage, gene_to_otu_to_prev) in taxon_to_params.items():
-                # Update residues
                 for otu_to_prev in gene_to_otu_to_prev.values():
                     for i, prev in otu_to_prev.items():
+                        # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
                         residues[i] += coverage * prev
+
                 # Algorithm 1 from Taslaman 2012
-                gene_to_otu_to_next_prev = {}
                 prev_sq_sum = 0
                 prev_residue_sum = 0
                 for marker, otu_to_prev in gene_to_otu_to_prev.items():
-                    consts = [
-                        ((residues[i] * coverage + delta * prev) / (current_coverage ** 2 + delta), i)
-                        for i, prev in otu_to_prev.items()
-                    ].sort()
+                    consts = []
+                    for i, prev in otu_to_prev.items():
+                        # # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
+                        # residues[i] += coverage * prev
+                        #
+                        consts.append(
+                            ((residues[i] * coverage + delta * prev) / (coverage ** 2 + delta), i, prev)
+                        )
+                    consts.sort(reverse = True)
                     alpha = 1
-                    for (j, const_j) in enumerate(consts):
-                        alpha -= const_j
+                    for j, (const, _, _) in enumerate(consts, start = 1):
+                        alpha -= const
                         min_pd = alpha / j
                         if (j == len(consts)): break
-                        if (min_pd <= -consts[j+1]): break
+                        if (min_pd <= -consts[j][0]): break
                     
-                    otu_to_next_prev = {}
-                    for const, i in consts[:j]:
-                        next_prev = const + min_pd
-                        otu_to_next_prev[i] = next_prev
-                        prev_sq_sum += next_prev ** 2
-                        prev_residue_sum += next_prev * residue[i]
+                    for jj, (const, i, prev) in enumerate(consts, start = 1):
+                        if (jj <= j):
+                            next_prev = const + min_pd
+                            prev_sq_sum += next_prev ** 2
+                            prev_residue_sum += next_prev * residues[i]
+                        else:
+                            next_prev = 0
+                        
+                        assert next_prev >= 0
+
+                        # update otu_to_prev in place!
+                        otu_to_prev[i] = next_prev
                         
                         coef_change = abs(next_prev - prev)
 
@@ -810,16 +841,24 @@ class Condenser:
                             max_change_desc = f"{tax} OTU {i} prevalence"
                             max_change_current = prev
                             max_change_update = next_prev
-                    
-                    for _, i in consts[j:]:
-                        otu_to_next_prev[i] = 0
-                    
-                    gene_to_otu_to_next_prev[marker] = otu_to_next_prev
                 
-                next_coverage = max(
-                    prev_residue_sum - coverage_rank_penalty[TaxonomyUtils.rank(tax)] / 2,
-                    0
-                ) / prev_sq_sum
+                next_coverage = (
+                    max(
+                        prev_residue_sum - coverage_rank_penalty[TaxonomyUtils.rank(tax)] / 2,
+                        0
+                    ) / prev_sq_sum
+                    if coverage_rank_penalty is not None
+                    else prev_residue_sum / prev_sq_sum
+                )
+
+                assert next_coverage >= 0
+                    
+                for otu_to_next_prev in gene_to_otu_to_prev.values():
+                    for i, next_prev in otu_to_next_prev.items():
+                        residues[i] -= next_prev * next_coverage
+                
+                # update coverage in place!
+                taxon_to_params[tax] = (next_coverage, gene_to_otu_to_prev)
 
                 coef_change = abs(next_coverage - coverage)
                 if coef_change > max_coef_change:
@@ -827,12 +866,8 @@ class Condenser:
                     max_change_desc = f"{tax} coverage"
                     max_change_current = coverage
                     max_change_update = next_coverage
-                    
-                for otu_to_next_prev in gene_to_otu_to_next_prev.values():
-                    for i, next_prev in otu_to_next_prev.items():
-                        residues[i] -= next_prev * next_coverage
 
-            need_another_iteration = num_steps < min_num_steps or max_coef_change > 0.001
+            need_another_iteration = max_coef_change > 0.001
             if not need_another_iteration:
                 logging.info(f"NMF converged")
                 break
@@ -863,7 +898,8 @@ class Condenser:
         loss = 0
         mask_loss = 0
         for i, (residue, otu) in enumerate(zip(residues, sample_otus)):
-            expected_coverage = residue - otu.coverage
+            # residue = otu.coverage - sum_k prev_k * coverage_k
+            expected_coverage = otu.coverage - residue
             
             if i in masks:
                 mask_loss += residue ** 2

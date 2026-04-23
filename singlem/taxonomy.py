@@ -67,3 +67,7 @@ class TaxonomyUtils:
     @staticmethod
     def rank(taxonomy_string):
         return TaxonomyUtils.ensure_root(taxonomy_string).count(";")
+
+    @staticmethod
+    def domain(taxonomy_string):
+        return TaxonomyUtils.ensure_root(taxonomy_string).split(';')[1].strip().replace('d__','')

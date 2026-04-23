@@ -55,7 +55,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.0, 'NMF steps' : 50},
+            {'NMF loss': 0.0, 'NMF steps' : 2},
             loss
         )
 
@@ -77,32 +77,10 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.0, 'NMF steps' : 50},
-            loss
-        )
-
-    def test_apply_nonneg_matrix_factorisation_core_split1_max_steps(self):
-        otus = ArchiveOtuTable()
-        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
-        otus.data = [
-            ['g1', 'sample1', 'seq1', 11,1.1,'Root;d__Bacteria;p;c;o;f;g;tax1','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD,[]],
-            ['g1', 'sample1', 'seq2', 11,1.1,'Root;d__Bacteria;p;c;o;f;g','','','','',['Root; d__Bacteria; p;c;o;f;g'],QUERY_BASED_ASSIGNMENT_METHOD,[]]
-        ]
-        species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']}, max_num_steps = 2)
-        self.assertEqual(
-            {'Root;d__Bacteria;p;c;o;f;g;tax1': 1.1,
-             'Root;d__Bacteria;p;c;o;f;g': 1.1},
-            species_to_coverage
-        )
-        self.assertEqual(
-            otus.data,
-            coverage_parts_otus.data
-        )
-        self.assertEqual(
             {'NMF loss': 0.0, 'NMF steps' : 2},
             loss
         )
-    
+
     def test_apply_nonneg_matrix_factorisation_core_split2(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION5
@@ -121,7 +99,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.0, 'NMF steps': 50},
+            {'NMF loss': 0.0, 'NMF steps': 2},
             loss
         )
 
@@ -148,27 +126,61 @@ class Tests(unittest.TestCase):
         ]
         species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
         self.assertEqual(
-            {'Root;d__Bacteria;p;c;o;f;g;tax1': 9.0},
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 8.667,
+             'Root;d__Bacteria;p;c;o;f;g;tax2': 0.667},
             species_to_coverage
         )
         species_to_coverage_zero_reg, _, _ = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
-            coverage_rank_penalty = [0, 0, 0, 0, 0, 0, 0, 0]
+            coverage_rank_penalty = [0] * 8
         )
         self.assertEqual(
             species_to_coverage,
             species_to_coverage_zero_reg
         )
+        new_data = [
+            ['g1', 'sample1', 'seq1', 1, 9.286, 'Root;d__Bacteria;p;c;o;f;g;tax1', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq1', 1, 0.714, 'Root;d__Bacteria;p;c;o;f;g;tax2', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g2', 'sample1', 'seq2', 1, 8.0, 'Root;d__Bacteria;p;c;o;f;g;tax1', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD, []]
+        ]
         self.assertEqual(
-            otus.data,
+            new_data,
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 1.414, 'NMF steps' : 50},
+            {'NMF loss': 1.333, 'NMF steps' : 9},
             loss
         )
-    
+   
+    def test_apply_nonneg_matrix_factorisation_core_expaper_max_steps(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1, 10, 'Root;d__Bacteria;p;c;o;f;g;tax1', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g2', 'sample1', 'seq2', 1, 8, 'Root;d__Bacteria;p;c;o;f;g;tax1', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD, []]
+        ]
+        species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']},
+                                                                                                             max_num_steps = 2)
+        self.assertEqual(
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 8.355,
+             'Root;d__Bacteria;p;c;o;f;g;tax2': 1.474},
+            species_to_coverage
+        )
+        new_data = [
+            ['g1', 'sample1', 'seq1', 1, 9.262, 'Root;d__Bacteria;p;c;o;f;g;tax1', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g1', 'sample1', 'seq1', 1, 0.738, 'Root;d__Bacteria;p;c;o;f;g;tax2', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []],
+            ['g2', 'sample1', 'seq2', 1, 8, 'Root;d__Bacteria;p;c;o;f;g;tax1', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1'], QUERY_BASED_ASSIGNMENT_METHOD, []]
+        ]
+        self.assertEqual(
+            new_data,
+            coverage_parts_otus.data
+        )
+        self.assertEqual(
+            {'NMF loss': 2.458, 'NMF steps' : 3},
+            loss
+        )
+     
     def test_apply_nonneg_matrix_factorisation_core_expaper_reg(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION5
@@ -179,10 +191,10 @@ class Tests(unittest.TestCase):
         species_to_coverage, _, _ = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
-            coverage_rank_penalty = [12, 10, 6, 3.5, 2.5, 2, 1.5, 0.01]
+            coverage_rank_penalty = [5] * 8
         )
         self.assertEqual(
-            {'Root;d__Bacteria;p;c;o;f;g;tax1': 8.99},
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 7.75},
             species_to_coverage
         )
 
@@ -197,7 +209,7 @@ class Tests(unittest.TestCase):
         ]
         species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']})
         self.assertEqual(
-            {'Root;d__Bacteria;p;c;o;f;g;tax1': 11.0,
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 11.001,
              'Root;d__Bacteria;p;c;o;f;g;tax2': 4.0},
             species_to_coverage
         )
@@ -223,11 +235,11 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 0.0, 'NMF steps': 50},
+            {'NMF loss': 0.0, 'NMF steps': 12},
             loss
         )
     
-    def test_apply_nonneg_matrix_factorisation_core_exparts_reg(self):
+    def test_apply_nonneg_matrix_factorisation_core_expart_s_reg(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION5
         otus.data = [
@@ -272,7 +284,7 @@ class Tests(unittest.TestCase):
             loss
         )
 
-    def test_apply_nonneg_matrix_factorisation_core_exparts_mask(self):
+    def test_apply_nonneg_matrix_factorisation_core_expart_s_mask(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION5
         otus.data = [
