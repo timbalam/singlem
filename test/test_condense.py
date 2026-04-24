@@ -149,7 +149,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 1.333, 'NMF steps' : 9},
+            {'NMF loss': 1.333, 'NMF steps' : 6},
             loss
         )
    
@@ -163,8 +163,8 @@ class Tests(unittest.TestCase):
         species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2']},
                                                                                                              max_num_steps = 2)
         self.assertEqual(
-            {'Root;d__Bacteria;p;c;o;f;g;tax1': 8.355,
-             'Root;d__Bacteria;p;c;o;f;g;tax2': 1.474},
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 8.625,
+             'Root;d__Bacteria;p;c;o;f;g;tax2': 0.688},
             species_to_coverage
         )
         new_data = [
@@ -177,7 +177,7 @@ class Tests(unittest.TestCase):
             coverage_parts_otus.data
         )
         self.assertEqual(
-            {'NMF loss': 2.458, 'NMF steps' : 3},
+            {'NMF loss': 1.336, 'NMF steps' : 3},
             loss
         )
      
@@ -239,7 +239,7 @@ class Tests(unittest.TestCase):
             loss
         )
     
-    def test_apply_nonneg_matrix_factorisation_core_expart_s_reg(self):
+    def test_apply_nonneg_matrix_factorisation_core_exparts_reg(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION5
         otus.data = [
@@ -251,11 +251,11 @@ class Tests(unittest.TestCase):
         species_to_coverage, _, _ = Condenser()._apply_nonneg_matrix_factorisation_core(
             otus,
             genes_per_domain = {'Bacteria': ['g1', 'g2']},
-            coverage_rank_penalty = [50, 40, 35, 30, 25, 20, 10, 0.5]
+            coverage_rank_penalty = [4] * 8
         )
         self.assertEqual(
-            {'Root;d__Bacteria;p;c;o;f;g;tax1': 10.577,
-             'Root;d__Bacteria;p;c;o;f;g;tax2': 3.607},
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 10,
+             'Root;d__Bacteria;p;c;o;f;g;tax2': 3},
             species_to_coverage
         )
 

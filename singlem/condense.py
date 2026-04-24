@@ -7,7 +7,7 @@ import sys
 from queue import Queue
 from collections import defaultdict
 from math import sqrt
-from itertools import accumulate
+from itertools import accumulate, zip_longest
 
 from .archive_otu_table import ArchiveOtuTable, ArchiveOtuTableEntry
 from .metapackage import Metapackage
@@ -709,7 +709,7 @@ class Condenser:
             sample_summary_root_node.add_words(TaxonomyUtils.split_taxonomy(tax), coverage)
 
         return CondensedCommunityProfile(sample, sample_summary_root_node)
-    
+
     def _apply_nonneg_matrix_factorisation_core(self, sample_otus, *,
                                                 genes_per_domain,
                                                 coverage_rank_penalty = None,
@@ -717,10 +717,10 @@ class Condenser:
                                                 max_num_steps = None):
         
         # Set up initial conditions.
-        # taxon -> (cov_v, marker -> n -> prev_v)
-        taxon_to_params = {}
+        # rank -> taxon -> (cov_v, marker -> n -> prev_v)
+        rank_to_taxon_to_params = {}
         residues = []
-        masks = []
+        masks = set()
         for (i, otu) in enumerate(sample_otus):
             mask = mask_otus is not None and otu.sequence in mask_otus
             residue = otu.coverage
@@ -737,23 +737,32 @@ class Condenser:
                             if clean_tax == 'Root':
                                 continue
 
+                            rank = TaxonomyUtils.rank(clean_tax)
                             try:
-                                (_, gene_to_otu_to_prev) = taxon_to_params[clean_tax]
+                                taxon_to_params = rank_to_taxon_to_params[rank]
+                            except KeyError:
+                                taxon_to_params = {}
+                                rank_to_taxon_to_params[rank] = taxon_to_params
+                            
+                            try:
+                                (coverage, gene_to_otu_to_prev) = taxon_to_params[clean_tax]
                             except KeyError:
                                 gene_to_otu_to_prev = {}
-                                taxon_to_params[clean_tax] = (1, gene_to_otu_to_prev)
+                                coverage = 1
+                                taxon_to_params[clean_tax] = (coverage, gene_to_otu_to_prev)
                             try:
                                 otu_to_prev = gene_to_otu_to_prev[marker]
                             except KeyError:
                                 otu_to_prev = {}
                                 gene_to_otu_to_prev[marker] = otu_to_prev
                             
-                            if not mask:
-                                residue -= 1
-                            otu_to_prev[i] = 1
-            residues.append(residue)
+                            prev = 1
+                            residue -= coverage * prev
+                            otu_to_prev[i] = prev
+            
+            residues.append(0 if mask else residue)
             if mask:
-                masks.append(i)
+                masks.add(i)
 
         if mask_otus is not None:
             if len(masks) == 0:
@@ -770,117 +779,49 @@ class Condenser:
                 domain_genes_residues.append((marker, len(residues)))
                 residues.append(0)
             genes_residues_per_domain[domain] = domain_genes_residues
-        for tax, (_, gene_to_otu_to_prev) in taxon_to_params.items():
-            for marker, ii in genes_residues_per_domain[TaxonomyUtils.domain(tax)]:
-                
-                try:
-                    otu_to_prev = gene_to_otu_to_prev[marker]
-                except KeyError:
-                    otu_to_prev = {}
-                    gene_to_otu_to_prev[marker] = otu_to_prev
-                
-                otu_to_prev[ii] = 1
-                residues[ii] -= 1
-
-        if len(taxon_to_params) == 0: return None, sample_otus
         
-        num_steps = 1
-        #min_num_steps = 50 if max_num_steps is None else min(50, max_num_steps)
-        delta = 1e-4
-        while True: # while not converged
-
-            max_coef_change = 0
-            max_change_desc = ""
-            max_change_current = np.nan
-            max_change_update = np.nan
-
-            # Pass over taxa
+        for taxon_to_params in rank_to_taxon_to_params.values():
             for tax, (coverage, gene_to_otu_to_prev) in taxon_to_params.items():
-                for otu_to_prev in gene_to_otu_to_prev.values():
-                    for i, prev in otu_to_prev.items():
-                        # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
-                        residues[i] += coverage * prev
-
-                # Algorithm 1 from Taslaman 2012
-                prev_sq_sum = 0
-                prev_residue_sum = 0
-                for marker, otu_to_prev in gene_to_otu_to_prev.items():
-                    consts = []
-                    for i, prev in otu_to_prev.items():
-                        # # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
-                        # residues[i] += coverage * prev
-                        #
-                        consts.append(
-                            ((residues[i] * coverage + delta * prev) / (coverage ** 2 + delta), i, prev)
-                        )
-                    consts.sort(reverse = True)
-                    alpha = 1
-                    for j, (const, _, _) in enumerate(consts, start = 1):
-                        alpha -= const
-                        min_pd = alpha / j
-                        if (j == len(consts)): break
-                        if (min_pd <= -consts[j][0]): break
+                for marker, ii in genes_residues_per_domain[TaxonomyUtils.domain(tax)]:
                     
-                    for jj, (const, i, prev) in enumerate(consts, start = 1):
-                        if (jj <= j):
-                            next_prev = const + min_pd
-                            prev_sq_sum += next_prev ** 2
-                            prev_residue_sum += next_prev * residues[i]
-                        else:
-                            next_prev = 0
-                        
-                        assert next_prev >= 0
-
-                        # update otu_to_prev in place!
-                        otu_to_prev[i] = next_prev
-                        
-                        coef_change = abs(next_prev - prev)
-
-                        if coef_change > max_coef_change:
-                            max_coef_change = coef_change
-                            max_change_desc = f"{tax} OTU {i} prevalence"
-                            max_change_current = prev
-                            max_change_update = next_prev
-                
-                next_coverage = (
-                    max(
-                        prev_residue_sum - coverage_rank_penalty[TaxonomyUtils.rank(tax)] / 2,
-                        0
-                    ) / prev_sq_sum
-                    if coverage_rank_penalty is not None
-                    else prev_residue_sum / prev_sq_sum
-                )
-
-                assert next_coverage >= 0
+                    try:
+                        otu_to_prev = gene_to_otu_to_prev[marker]
+                    except KeyError:
+                        otu_to_prev = {}
+                        gene_to_otu_to_prev[marker] = otu_to_prev
                     
-                for otu_to_next_prev in gene_to_otu_to_prev.values():
-                    for i, next_prev in otu_to_next_prev.items():
-                        residues[i] -= next_prev * next_coverage
-                
-                # update coverage in place!
-                taxon_to_params[tax] = (next_coverage, gene_to_otu_to_prev)
+                    prev = 1
+                    residues[ii] -= coverage * prev
+                    otu_to_prev[ii] = prev
 
-                coef_change = abs(next_coverage - coverage)
-                if coef_change > max_coef_change:
-                    max_coef_change = coef_change
-                    max_change_desc = f"{tax} coverage"
-                    max_change_current = coverage
-                    max_change_update = next_coverage
+        if len(rank_to_taxon_to_params) == 0: return None, sample_otus
+        
+        import pdb; pdb.set_trace()
 
-            need_another_iteration = max_coef_change > 0.001
-            if not need_another_iteration:
-                logging.info(f"NMF converged")
-                break
+        taxon_to_params = {}
+        current_taxon_to_params = {}
+        num_steps = 0
+        neg_residues = [0] * len(residues)
+        for rank in range(7, -1, -1):
+            next_taxon_to_params = rank_to_taxon_to_params.get(rank, {})
+            self._aggregate_taxa_to_params_inplace(next_taxon_to_params, residues, current_taxon_to_params)
+            rank_num_steps = self._apply_rank_nonneg_matrix_factorisation_core_inplace(
+                next_taxon_to_params,
+                residues,
+                coverage_penalty = None if coverage_rank_penalty is None else coverage_rank_penalty[rank],
+                max_num_steps = max_num_steps
+            )
+            num_steps = max(num_steps, rank_num_steps)
+            taxon_to_params |= next_taxon_to_params
+            current_taxon_to_params = next_taxon_to_params
 
-            if num_steps % 100 == 0:
-                logging.info(f"Max coef change after {num_steps} steps {max_coef_change}")
-                logging.debug(f"{max_change_desc} changed from {max_change_current} to {max_change_update}")
-
-            num_steps += 1
-            
-            if max_num_steps is not None and num_steps > max_num_steps:
-                logging.warning(f"NMF failed to converge after max steps")
-                break
+            # Here we enforce positive residues for the next rank
+            # and keep track of the removed negative residues to add back later.
+            for i in range(len(residues)):
+                r = residues[i]
+                if (r < 0):
+                    neg_residues[i] += r
+                    residues[i] = 0
         
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
         # Use 3 decimals to avoid rounding to 0 when one OTU is split between many species
@@ -892,23 +833,24 @@ class Condenser:
                 rounded_taxon_to_coverage[tax] = cov2
             if coverage_rank_penalty is not None:
                 reg_loss += coverage_rank_penalty[TaxonomyUtils.rank(tax)] * coverage
-
+        
         coverage_parts_otus = ArchiveOtuTable()
         coverage_parts_otus.fields = sample_otus.fields
         loss = 0
         mask_loss = 0
-        for i, (residue, otu) in enumerate(zip(residues, sample_otus)):
-            # residue = otu.coverage - sum_k prev_k * coverage_k
-            expected_coverage = otu.coverage - residue
+        for i, (residue, neg_residue, otu) in enumerate(zip_longest(residues, neg_residues, sample_otus)):
             
             if i in masks:
-                mask_loss += residue ** 2
+                mask_loss += (residue + neg_residue) ** 2
             else:
-                loss += residue ** 2
+                loss += (residue + neg_residue) ** 2
 
-            if (expected_coverage == 0
-                or (otu.taxonomy_assignment_method()
-                    not in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD))):
+            if otu is None: continue
+
+            # residue = otu.coverage - sum_k prev_k * coverage_k
+            expected_coverage = otu.coverage - residue - neg_residue
+            if (otu.taxonomy_assignment_method()
+                not in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)):
                 new_otu = ArchiveOtuTableEntry()
                 new_otu.data = otu.data.copy()
                 new_otu.data[ArchiveOtuTable.TAXONOMY_FIELD_INDEX] = "Root"
@@ -951,6 +893,137 @@ class Condenser:
             logging.info(f"{key} {value}")
 
         return rounded_taxon_to_coverage, coverage_parts_otus, loss_dict
+
+    def _aggregate_taxa_to_params_inplace(self, parent_taxon_to_params, residues, taxon_to_params):
+        # assign higher taxa only for positive residues
+        for tax, (_, gene_to_otu_to_prev) in taxon_to_params.items():
+            par = re.sub(";[^;]+$", "", tax)
+            try:
+                parent_coverage, parent_gene_to_otu_to_prev = parent_taxon_to_params[par]
+            except KeyError:
+                parent_gene_to_otu_to_prev = {}
+                parent_coverage = 1
+                parent_taxon_to_params[par] = (parent_coverage, parent_gene_to_otu_to_prev)
+            
+            for marker, otu_to_prev in gene_to_otu_to_prev.items():
+                try:
+                    parent_otu_to_prev = parent_gene_to_otu_to_prev[marker]
+                except KeyError:
+                    parent_otu_to_prev = {}
+                    parent_gene_to_otu_to_prev[marker] = parent_otu_to_prev
+                
+                for i in otu_to_prev.keys():
+                    if i not in parent_otu_to_prev:
+                        prev = 1
+                        residues[i] -= prev * parent_coverage
+                        parent_otu_to_prev[i] = prev
+        
+
+    def _apply_rank_nonneg_matrix_factorisation_core_inplace(self, taxon_to_params, residues,
+                                                             coverage_penalty = None,
+                                                             max_num_steps = None):
+
+        num_steps = 1
+        delta = 1e-4
+
+        while True: # while not converged
+
+            max_coef_change = 0
+            max_change_desc = ""
+            max_change_current = np.nan
+            max_change_update = np.nan
+
+            # Pass over taxa
+            for tax, (coverage, gene_to_otu_to_prev) in taxon_to_params.items():
+                for otu_to_prev in gene_to_otu_to_prev.values():
+                    for i, prev in otu_to_prev.items():
+                        # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
+                        residues[i] += coverage * prev
+
+                # Algorithm 1 from Taslaman 2012
+                prev_sq_sum = 0
+                prev_residue_sum = 0
+                for otu_to_prev in gene_to_otu_to_prev.values():
+                    consts = []
+                    for i, prev in otu_to_prev.items():
+                        # # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
+                        # residues[i] += coverage * prev
+                        #
+                        consts.append(
+                            ((residues[i] * coverage + delta * prev) / (coverage ** 2 + delta), i, prev)
+                        )
+                    consts.sort(reverse = True)
+                    alpha = 1
+                    for j, (const, _, _) in enumerate(consts, start = 1):
+                        alpha -= const
+                        min_pd = alpha / j
+                        if (j == len(consts)): break
+                        if (min_pd <= -consts[j][0]): break
+                    
+                    for jj, (const, i, prev) in enumerate(consts, start = 1):
+                        if (jj <= j):
+                            next_prev = const + min_pd
+                            prev_sq_sum += next_prev ** 2
+                            prev_residue_sum += next_prev * residues[i]
+                        else:
+                            next_prev = 0
+                        
+                        assert next_prev >= 0
+
+                        # update otu_to_prev in place!
+                        otu_to_prev[i] = next_prev
+                        
+                        coef_change = abs(next_prev - prev)
+
+                        if coef_change > max_coef_change:
+                            max_coef_change = coef_change
+                            max_change_desc = f"{tax} OTU {i} prevalence"
+                            max_change_current = prev
+                            max_change_update = next_prev
+                
+                next_coverage = (
+                    max(
+                        prev_residue_sum - coverage_penalty / 2,
+                        0
+                    ) / prev_sq_sum
+                    if coverage_penalty is not None
+                    else prev_residue_sum / prev_sq_sum
+                )
+
+                if next_coverage < 0:
+                    assert next_coverage > -0.001
+                    next_coverage = 0
+
+                for otu_to_next_prev in gene_to_otu_to_prev.values():
+                    for i, next_prev in otu_to_next_prev.items():
+                        residues[i] -= next_prev * next_coverage
+                
+                # update coverage in place!
+                taxon_to_params[tax] = (next_coverage, gene_to_otu_to_prev)
+
+                coef_change = abs(next_coverage - coverage)
+                if coef_change > max_coef_change:
+                    max_coef_change = coef_change
+                    max_change_desc = f"{tax} coverage"
+                    max_change_current = coverage
+                    max_change_update = next_coverage
+
+            need_another_iteration = max_coef_change > 0.001
+            if not need_another_iteration:
+                logging.info(f"NMF converged")
+                break
+
+            if num_steps % 100 == 0:
+                logging.info(f"Max coef change after {num_steps} steps {max_coef_change}")
+                logging.debug(f"{max_change_desc} changed from {max_change_current} to {max_change_update}")
+
+            num_steps += 1
+            
+            if max_num_steps is not None and num_steps > max_num_steps:
+                logging.warning(f"NMF failed to converge after max steps")
+                break
+        
+        return num_steps
 
     def _apply_nonneg_matrix_factorisation_old_core(self, sample_otus, *,
                                                 genes_per_domain,
