@@ -710,20 +710,22 @@ class Condenser:
 
         return CondensedCommunityProfile(sample, sample_summary_root_node)
 
-    def _apply_nonneg_matrix_factorisation_core(self, sample_otus, *,
+    def _apply_top_down_nonneg_matrix_factorisation_core(self, sample_otus, *,
                                                 genes_per_domain,
                                                 coverage_rank_penalty = None,
                                                 mask_otus = None,
                                                 max_num_steps = None):
         
         # Set up initial conditions.
-        # taxon -> marker -> {otu_idx}
-        taxon_to_gene_to_otus = {}
+        # rank -> taxon -> (cov_v, marker -> n -> prev_v)
+        rank_to_taxon_to_params = {}
         residues = []
         masks = set()
-
-        # calculate number of OTUs with best hits
-        # in each higher level taxon on the first pass.
+        
+        # track ancestors of best hit taxa
+        # and count otus for each unique parent-child pair.
+        # tax -> tax -> num_otus
+        par_to_child_to_count = defaultdict(lambda: defaultdict(lambda: 0))
         for (idx, otu) in enumerate(sample_otus):
             mask = mask_otus is not None and otu.sequence in mask_otus
             residues.append(otu.coverage)
@@ -740,144 +742,81 @@ class Condenser:
                             if clean_tax == 'Root':
                                 continue
 
-                            try:
-                                gene_to_otus = taxon_to_gene_to_otus[clean_tax]
-                            except KeyError:
-                                gene_to_otus = {}
-                                taxon_to_gene_to_otus[clean_tax] = gene_to_otus
-                            try:
-                                otus = gene_to_otus[marker]
-                            except KeyError:
-                                otus = set()
-                                gene_to_otus[marker] = otus
-                            
-                            otus.add(idx)
+                            tax = None
+                            for taxa in ([clean_tax], TaxonomyUtils.ancestor_taxonomies(clean_tax)):
+                                for par in taxa:
+                                    rank = TaxonomyUtils.rank(par)
+                                    try:
+                                        taxon_to_params = rank_to_taxon_to_params[rank]
+                                    except KeyError:
+                                        taxon_to_params = {}
+                                        rank_to_taxon_to_params[rank] = taxon_to_params
+                                    
+                                    try:
+                                        (coverage, gene_to_otu_to_prev) = taxon_to_params[par]
+                                    except KeyError:
+                                        gene_to_otu_to_prev = {}
+                                        coverage = 1
+                                        taxon_to_params[par] = (coverage, gene_to_otu_to_prev)
+                                    
+                                    try:
+                                        otu_to_prev = gene_to_otu_to_prev[marker]
+                                    except KeyError:
+                                        otu_to_prev = {}
+                                        gene_to_otu_to_prev[marker] = otu_to_prev
+                                    
+                                    if not idx in otu_to_prev:
+                                        if tax is not None:
+                                            par_to_child_to_count[par][tax] += 1
+                                        prev = 1
+                                        otu_to_prev[idx] = prev
+                                    tax = par
             
             if mask:
                 masks.add(idx)
-
-
-        # If using regularisation,
-        # also 
-        regularised_augment_hits = (
-            coverage_rank_penalty is not None and max(coverage_rank_penalty) > 0
-        )
-        par_to_child_to_count = defaultdict(lambda: defaultdict(lambda: 0))
-        n_mask = 0
-        for otu in sample_otus:
-            taxon_to_prev = {}
-            mask = mask_otus is not None and otu.sequence in mask_otus
-            if (mask):
-                n_mask += 1
-            if (otu.taxonomy_assignment_method()
-                in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)):
-                marker = otu.marker
-                best_hit_taxonomies = otu.equal_best_hit_taxonomies()
-                good_taxonomies = otu.good_taxonomies()
-                for taxonomies in (best_hit_taxonomies, good_taxonomies):
-                    if taxonomies is not None:
-                        for best_hit_tax in taxonomies:
-                            clean_tax = TaxonomyUtils.clean_taxonomy_string(best_hit_tax)
-
-                            if clean_tax == 'Root':
-                                continue
-
-                            try:
-                                (_, _, gene_to_prev) = taxon_to_coverage[clean_tax]
-                            except KeyError:
-                                gene_to_prev = {}
-                                taxon_to_coverage[clean_tax] = (0., 1., gene_to_prev)
-                            
-                            try:
-                                gene_to_prev[marker] += 1
-                            except KeyError:
-                                gene_to_prev[marker] = 1
-                            
-                            taxon_to_prev[clean_tax] = (0., 1.)
-
-            if regularised_augment_hits:
-                child_to_par = {}
-
-                # track ancestors of best hit taxa
-                # and count otus for each unique parent-child pair.
-                for clean_tax in taxon_to_prev.keys():
-                    child_tax = clean_tax
-                    for anc_tax in TaxonomyUtils.ancestor_taxonomies(clean_tax):
-                        if child_tax in child_to_par: # count OTU once per parent-child pair
-                            break
-                        child_to_par[child_tax] = anc_tax
-                        par_to_child_to_count[anc_tax][child_tax] += 1
-                        child_tax = anc_tax
-
-                otu_to_best_hits.append((mask, child_to_par, taxon_to_prev, otu))
-            
-            else: 
-                otu_to_best_hits.append((mask, taxon_to_prev, otu, 0.))
-
-        if mask_otus is not None:
-            if n_mask == 0:
-                logging.warning("Masking 0 OTUs for this sample")
-            else:
-                logging.info(f"Masking {n_mask} OTUs for this sample")
-        
-        # If using regularisation:
-        # Second pass to initialise OTU for best hit taxa
-        # and taxa at higher ranks with strictly more aggregate OTU hits
-        # then any child taxon
-        # (this restriction avoids adding degenerate ancestor taxa)
-        # to allow nmds to assign OTU abundances to higher levels.
-        # Effectively, keep taxa which are assigned directly to OTUs,
-        # or have multiple descendent taxa assigned.
-        if regularised_augment_hits:
-            for i, (mask, child_to_par, taxon_to_prev, otu) in enumerate(otu_to_best_hits):
-                marker = otu.marker
-                for child_tax, par_tax in child_to_par.items():
-                    if child_tax not in par_to_child_to_count:
-                        # child is a leaf so already counted in taxon_to_coverage, taxon_to_prev
-                        continue
-                    
-                    max_child_child_count = max(par_to_child_to_count[child_tax].values())
-
-                    if par_to_child_to_count[par_tax][child_tax] > max_child_child_count:
-                        try:
-                            (_, _, gene_to_prev) = taxon_to_coverage[child_tax]
-                        except KeyError:
-                            gene_to_prev = {}
-                            taxon_to_coverage[child_tax] = (0., 1., gene_to_prev)
-
-                        try:
-                            gene_to_prev[marker] += 1
-                        except KeyError:
-                            gene_to_prev[marker] = 1
-                        
-                        taxon_to_prev[child_tax] = (0., 1.)
-                
-                # update in place!
-                otu_to_best_hits[i] = (mask, taxon_to_prev, otu, 0.)
-
 
         if mask_otus is not None:
             if len(masks) == 0:
                 logging.warning("Masking 0 OTUs for this sample")
             else:
                 logging.info(f"Masking {len(masks)} OTUs for this sample")
-        
-        # Include residue for an OTU with zero-abundance OTU for each
-        # targetted domain for each marker
-        genes_residues_per_domain = {}
-        for domain, markers in genes_per_domain.items():
-            domain_genes_residues = []
-            for marker in markers:
-                domain_genes_residues.append((marker, len(residues)))
-                residues.append(0)
-            genes_residues_per_domain[domain] = domain_genes_residues
 
-        if len(taxon_to_gene_to_otus) == 0: return None, sample_otus
+        # Filter out degenerate higher rank taxa to save work.
+        # Taxa at higher ranks with strictly more aggregate OTU hits
+        # then any child taxon are non-degenerate.
+        # Effectively, keep taxa which are assigned directly to OTUs,
+        # or have multiple child taxa assigned.
+        for par, child_to_count in par_to_child_to_count.items():
+            for tax, count in child_to_count.items():
+                if tax not in par_to_child_to_count:
+                    # child is a leaf (i.e. not an ancestor) so already counted
+                    # in taxon_to_params
+                    continue
+                
+                max_child_child_count = max(par_to_child_to_count[tax].values())
+
+                if count <= max_child_child_count:
+                    rank = TaxonomyUtils.rank(tax)
+                    del rank_to_taxon_to_params[rank][tax]
         
-        taxon_to_params = {}
+        # Include zero-abundance dummy OTU for each
+        # targetted domain for each marker
+        genes_otus_per_domain = {}
+        for domain, markers in genes_per_domain.items():
+            domain_genes_otus = []
+            for marker in markers:
+                domain_genes_otus.append((marker, len(residues)))
+                residues.append(0)
+            genes_otus_per_domain[domain] = domain_genes_otus
+
+        if len(rank_to_taxon_to_params) == 0: return None, sample_otus
+        
+        next_taxon_to_params = rank_to_taxon_to_params[0]
         num_steps = 0
-        for rank in range(0, 8):
-            next_taxon_to_params = self._aggregate_rank_to_params_residues_inplace(residues, taxon_to_gene_to_otus, rank)
+        for rank in range(0, 7):
+            next_residues = rank_to_taxon_to_residues[rank]
+            self._update_residues_inplace(rank_to_taxon_to_residues[rank], rank_to_taxon_to_params[rank])
+            for 
             for i in masks: residues[i] = 0 # mask residues
             rank_num_steps = self._apply_rank_nonneg_matrix_factorisation_core_inplace(
                 next_taxon_to_params,
@@ -961,33 +900,13 @@ class Condenser:
 
         return rounded_taxon_to_coverage, coverage_parts_otus, loss_dict
 
-    def _aggregate_rank_to_params_residues_inplace(self, residues, taxon_to_gene_to_otus, rank):
-        rank_taxon_to_params = {}
-        for tax, gene_to_otus in taxon_to_gene_to_otus.items():
-            split = TaxonomyUtils.split_taxonomy(tax)
-            if (rank >= len(split)): continue
-            rank_taxon = ";".join(split[:rank+1])
-            try:
-                coverage, gene_to_otu_to_prev = rank_taxon_to_params[rank_taxon]
-            except KeyError:
-                gene_to_otu_to_prev = {}
-                coverage = 1
-                rank_taxon_to_params[rank_taxon] = (coverage, gene_to_otu_to_prev)
+    def _update_residues_inplace(self, residues, taxon_to_params):
+        for coverage, gene_to_otu_to_prev in taxon_to_params.values():
             
-            for marker, otus in gene_to_otus.items():
-                try:
-                    otu_to_prev = gene_to_otu_to_prev[marker]
-                except KeyError:
-                    otu_to_prev = {}
-                    gene_to_otu_to_prev[marker] = otu_to_prev
+            for otu_to_prev in gene_to_otu_to_prev.values():
                 
-                for idx in otus:
-                    if idx not in otu_to_prev:
-                        prev = 1
-                        residues[idx] -= prev * coverage
-                        otu_to_prev[idx] = prev
-        
-        return rank_taxon_to_params
+                for idx, prev in otu_to_prev:
+                    residues[idx] -= prev * coverage
     
     def _apply_rank_nonneg_matrix_factorisation_core_inplace(self, taxon_to_params, residues,
                                                              coverage_penalty = None,
@@ -1135,6 +1054,7 @@ class Condenser:
                                 gene_to_otu_to_prev = {}
                                 coverage = 1
                                 taxon_to_params[clean_tax] = (coverage, gene_to_otu_to_prev)
+                            
                             try:
                                 otu_to_prev = gene_to_otu_to_prev[marker]
                             except KeyError:

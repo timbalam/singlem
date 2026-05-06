@@ -71,3 +71,7 @@ class TaxonomyUtils:
     @staticmethod
     def domain(taxonomy_string):
         return TaxonomyUtils.ensure_root(taxonomy_string).split(';')[1].strip().replace('d__','')
+
+    @staticmethod
+    def parent(taxonomy_string):
+        return re.sub(";[^;]+$", "", TaxonomyUtils.ensure_root(taxonomy_string))
