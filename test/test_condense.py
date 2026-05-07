@@ -295,7 +295,7 @@ class Tests(unittest.TestCase):
             ['g3', 'sample1', 'seq5', 1, 16, '', '', '', '', '', ['Root; d__Bacteria; p;c;o;f;g; tax1','Root; d__Bacteria; p;c;o;f;g; tax2'], QUERY_BASED_ASSIGNMENT_METHOD, []]
         ]
         species_to_coverage, _, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1', 'g2', 'g3']},
-                                                                                                       mask_otus = ["seq5"])
+                                                                                           mask_otus = ["seq5"])
         self.assertEqual(
             {'Root;d__Bacteria;p;c;o;f;g;tax1': 11,
              'Root;d__Bacteria;p;c;o;f;g;tax2': 4},
