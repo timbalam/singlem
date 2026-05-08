@@ -311,7 +311,7 @@ class Tests(unittest.TestCase):
             species_to_coverage_zero_cov_reg
         )
         self.assertEqual(
-            {'NMF loss': 0.0, 'NMF mask loss': 1.0, 'NMF steps': 50},
+            {'NMF loss': 0.0, 'NMF mask loss': 1.0, 'NMF steps': 22},
             loss
         )
     
