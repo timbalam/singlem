@@ -850,8 +850,6 @@ class Condenser:
                 rounded_taxon_to_coverage[tax] = cov2
             if coverage_rank_penalty is not None:
                 reg_loss += coverage_rank_penalty[TaxonomyUtils.rank(tax)] * coverage
-        
-        import pdb; pdb.set_trace()
 
         coverage_parts_otus = ArchiveOtuTable()
         coverage_parts_otus.fields = sample_otus.fields
