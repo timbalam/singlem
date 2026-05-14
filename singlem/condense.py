@@ -194,7 +194,7 @@ class Condenser:
                 sample_otus,
                 genes_per_domain = target_domains,
                 coverage_rank_penalty = coverage_rank_penalty,
-                trim_percent = trim_percent,
+                #trim_percent = trim_percent,
                 mask_otus = mask_otus,
                 max_num_steps = max_num_steps
             )
@@ -911,7 +911,11 @@ class Condenser:
                                     continue
                         
                                 #part = round(next_prev * next_coverage, 3)
-                                part = round(prev * coverage * otu.coverage / expected_coverage, 3)
+                                part = (
+                                    round(prev * coverage * otu.coverage / expected_coverage, 3)
+                                    if prev * coverage > 0
+                                    else 0
+                                )
                                 if part > 0:
                                     new_otu = ArchiveOtuTableEntry()
                                     new_otu.data = otu.data.copy()
