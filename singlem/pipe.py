@@ -599,7 +599,6 @@ class SearchPipe:
 
         return extracted_reads
 
-
     def _process_taxonomically_assigned_reads(
             self,
             # inputs
@@ -650,7 +649,8 @@ class SearchPipe:
                     list([ns[1] for ns in names_and_sequences]),
                     info.equal_best_taxonomies,
                     info.taxonomy_assignment_method,
-                    info.good_taxonomies]
+                    info.good_taxonomies,
+                    info.percent_identities]
                 otu_table_object.data.append(to_print)
 
         def extract_placement_parser(
@@ -826,8 +826,7 @@ class SearchPipe:
                     )
                     equal_best_taxonomies = None
                     placement_parser = None
-                    
-
+                
                 new_infos = list(self._seqs_to_counts_and_taxonomy(
                     aligned_seqs, singlem_assignment_method,
                     known_sequence_tax if known_sequence_taxonomy else {},
@@ -925,6 +924,7 @@ class SearchPipe:
                 self.orf_names = []
                 self.known_sequence_taxonomies = []
                 self.good_taxonomies = []
+                self.percent_identities = []
 
         seq_to_collected_info = {}
         for s in sequences:
@@ -933,6 +933,7 @@ class SearchPipe:
                 tax = None
                 equal_best_tax = None
                 good_tax = None
+                percent_identities = None
             else:
                 try:
                     tax = per_read_taxonomies[s.name]
@@ -955,13 +956,16 @@ class SearchPipe:
                             SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD
                         ):
                             good_tax = equal_best_tax[1]
+                            pident = equal_best_tax[2]
                             equal_best_tax = equal_best_tax[0]
                         else:
                             good_tax = None
+                            pident = None
                     except KeyError:
                         equal_best_tax = None
                         good_tax = None
-
+                        pident = None
+            
             try:
                 collected_info = seq_to_collected_info[s.aligned_sequence]
             except KeyError:
@@ -980,11 +984,14 @@ class SearchPipe:
             collected_info.coverage += s.coverage_increment()
             collected_info.aligned_lengths.append(s.aligned_length)
             collected_info.orf_names.append(s.orf_name)
+            if per_read_equal_best_taxonomies is not None:
+                collected_info.percent_identities.append(pident)
 
         class Info:
             def __init__(self, seq, count, taxonomy, equal_best_taxonomies, names,
                          unaligned_sequences, coverage, aligned_lengths,
-                         taxonomy_assignment_method, good_taxonomies):
+                         taxonomy_assignment_method, good_taxonomies,
+                         percent_identities):
                 self.seq = seq
                 self.count = count
                 self.taxonomy = taxonomy
@@ -995,6 +1002,7 @@ class SearchPipe:
                 self.aligned_lengths = aligned_lengths
                 self.taxonomy_assignment_method = taxonomy_assignment_method
                 self.good_taxonomies = good_taxonomies
+                self.percent_identities = percent_identities
 
         for seq, collected_info in seq_to_collected_info.items():
             # All seqs in OTU have the same assignment method, except in rare
@@ -1008,7 +1016,10 @@ class SearchPipe:
                 otu_taxonomy_assignment_method = taxonomy_assignment_methods.get_assignment_method(name)
                 if otu_taxonomy_assignment_method is not None:
                     break
-
+            
+            equal_best_tax = None
+            good_tax = None
+            percent_identities = None
             if s.aligned_sequence in otu_sequence_assigned_taxonomies:
                 tax = otu_sequence_assigned_taxonomies[s.aligned_sequence].taxonomy
             elif assignment_method == DIAMOND_EXAMPLE_BEST_HIT_ASSIGNMENT_METHOD:
@@ -1029,29 +1040,25 @@ class SearchPipe:
                     if otu_taxonomy_assignment_method == DIAMOND_ASSIGNMENT_METHOD:
                         equal_best_tax = collected_info.equal_best_taxonomies
                         good_tax = collected_info.good_taxonomies
+                        percent_identities = collected_info.percent_identities
                     else:
                         # For query assigned taxonomies this is right
-                        equal_best_tax = (
-                            collected_info.equal_best_taxonomies[0]
-                            if collected_info.equal_best_taxonomies != []
-                            else None
-                        )
-                        good_tax = (
-                            collected_info.good_taxonomies[0]
-                            if collected_info.good_taxonomies != []
-                            else None
-                        )
+                        if collected_info.equal_best_taxonomies != []:
+                            equal_best_tax = collected_info.equal_best_taxonomies[0]
+                        if collected_info.good_taxonomies != []:
+                            good_tax = collected_info.good_taxonomies[0]
 
             yield Info(seq,
                        collected_info.count,
                        tax,
-                       equal_best_tax if per_read_equal_best_taxonomies is not None else None,
+                       equal_best_tax,
                        collected_info.names,
                        collected_info.unaligned_sequences,
                        collected_info.coverage,
                        collected_info.aligned_lengths,
                        otu_taxonomy_assignment_method,
-                       good_tax if per_read_equal_best_taxonomies is not None else None)
+                       good_tax,
+                       percent_identities)
 
     def _median_taxonomy(self, taxonomies):
         levels_to_counts = []
@@ -1439,15 +1446,15 @@ class SearchPipe:
                         best_hits = {}
                         if assignment_method == DIAMOND_EXAMPLE_BEST_HIT_ASSIGNMENT_METHOD:
                             best_hit_bitscore = {}
-                            for (query, subject, bitscore) in diamond.run_to_hits(query, singlem_package, self._num_threads):
+                            for (query_id, subject, bitscore, _) in diamond.run_to_hits(query, singlem_package, self._num_threads):
                                 try:
-                                    if bitscore > best_hit_bitscore[query]:
+                                    if bitscore > best_hit_bitscore[query_id]:
                                         raise Exception("Unexpected order of DIAMOND results during taxonomy assignment")
                                     else:
                                         continue
                                 except KeyError:
-                                    best_hits[query] = subject
-                                    best_hit_bitscore[query] = bitscore
+                                    best_hits[query_id] = subject
+                                    best_hit_bitscore[query_id] = bitscore
                         
                         elif assignment_method in (
                             DIAMOND_ASSIGNMENT_METHOD,
@@ -1455,11 +1462,11 @@ class SearchPipe:
                             SCANN_THEN_DIAMOND_ASSIGNMENT_METHOD,
                             SCANN_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD,
                             SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD):
-                            for (query, subject, bitscore) in diamond.run_to_hits(query, singlem_package, self._num_threads):
+                            for (query_id, subject, bitscore, pident) in diamond.run_to_hits(query, singlem_package, self._num_threads):
                                 try:
-                                    best_hits[query].append((subject, bitscore))
+                                    best_hits[query_id].append((subject, bitscore, pident))
                                 except KeyError:
-                                    best_hits[query] = [(subject, bitscore)]
+                                    best_hits[query_id] = [(subject, bitscore, pident)]
                         else:
                             raise Exception("Programming error")
 
@@ -1802,8 +1809,9 @@ class DiamondTaxonomicAssignmentResult:
                     self._package_to_sample_to_best_hits[pkg][sample_name] = bests
 
     def _best_good_hits(self, taxonomy_strings_scores, good_hits):
-        best_score = max([v[1] for v in taxonomy_strings_scores])
-        best_good_hits = ([], [])
+        best_score = max(v[1] for v in taxonomy_strings_scores)
+        pident = min(v[2] for v in taxonomy_strings_scores)
+        best_good_hits = ([], [], pident)
         for v in taxonomy_strings_scores:
             if v[1] == best_score:
                 best_good_hits[0].append(v[0])
@@ -2010,7 +2018,7 @@ class Diamond:
 
     def run_to_hits(self, query, singlem_package, num_threads):
         cmd_stub = "diamond blastx " \
-            "--outfmt 6 qseqid sseqid bitscore " \
+            "--outfmt 6 qseqid sseqid bitscore pident " \
             "--top %i " \
             "--evalue 0.01 " \
             "--threads %i " \
@@ -2045,11 +2053,11 @@ class Diamond:
 
                 with open(diamond_out.name) as d:
                     for row in csv.reader(d, delimiter='\t'):
-                        if len(row) != 3:
+                        if len(row) != 4:
                             raise Exception("Unexpected number of CSV row elements detected in line: {}".format(row))
                         
-                        # query, subject, bitscore
-                        chunk_hits.append((row[0], row[1], float(row[2])))
+                        # query, subject, bitscore, pident
+                        chunk_hits.append((row[0], row[1], float(row[2]), float(row[3])))
             
             return chunk_hits
 

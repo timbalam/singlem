@@ -19,7 +19,7 @@ class ArchiveOtuTable:
         'gene    sample    sequence    num_hits    coverage    taxonomy    read_names    nucleotides_aligned  taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method'
     )
     FIELDS_VERSION5 = str.split(
-        'gene    sample    sequence    num_hits    coverage    taxonomy    read_names    nucleotides_aligned  taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method  good_taxonomies'
+        'gene    sample    sequence    num_hits    coverage    taxonomy    read_names    nucleotides_aligned  taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method  good_taxonomies percent_identities'
     )
     FIELDS_OF_EACH_VERSION = [
         FIELDS_VERSION1,
@@ -30,7 +30,7 @@ class ArchiveOtuTable:
     ]
     FIELDS = FIELDS_OF_EACH_VERSION[version - 1]
 
-    READ_NAME_FIELD_INDEX = 6
+    READ_NAME_FIELD_INDEX = FIELDS.index("read_names")
     SAMPLE_ID_FIELD_INDEX = FIELDS.index('sample')
     UNALIGNED_SEQUENCE_FIELD_INDEX = FIELDS.index('read_unaligned_sequences')
     EQUAL_BEST_HIT_TAXONOMIES_INDEX = FIELDS.index('equal_best_hit_taxonomies')
@@ -40,6 +40,7 @@ class ArchiveOtuTable:
     NUCLEOTIDES_ALIGNED_FIELD_INDEX = FIELDS.index('nucleotides_aligned')
     TAXONOMY_BY_KNOWN_FIELD_INDEX = FIELDS.index('taxonomy_by_known?')
     GOOD_TAXONOMIES_FIELD_INDEX = FIELDS.index('good_taxonomies')
+    PERCENT_IDENTITIES_FIELD_INDEX = FIELDS.index('percent_identities')
 
     def __init__(self, singlem_packages=None):
         self.singlem_packages = singlem_packages
@@ -141,6 +142,8 @@ class ArchiveOtuTableEntry(OtuTableEntry):
     def good_taxonomies(self):
         return self.data[ArchiveOtuTable.GOOD_TAXONOMIES_FIELD_INDEX]
 
+    def percent_identities(self):
+        return self.data[ArchiveOtuTable.PERCENT_IDENTITIES_FIELD_INDEX]
 
 class InsufficientArchiveOtuTableVersionException(Exception):
     pass
