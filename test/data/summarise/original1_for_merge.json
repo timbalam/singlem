@@ -135,7 +135,8 @@
     "read_unaligned_sequences",
     "equal_best_hit_taxonomies",
     "taxonomy_assignment_method",
-    "good_taxonomies"
+    "good_taxonomies",
+    "percent_identities"
   ],
   "otus": [
     [
@@ -175,6 +176,7 @@
         ]
       ],
       "diamond",
+      null,
       null
     ]
   ]

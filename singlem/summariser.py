@@ -442,6 +442,7 @@ class Summariser:
             if version == 5:
                 if tax_assignment_method == QUERY_BASED_ASSIGNMENT_METHOD:
                     good_taxonomies = grouped.iloc[0]['good_taxonomies']
+                    percent_identities = None
                 elif tax_assignment_method == DIAMOND_ASSIGNMENT_METHOD:
                     good_taxonomies = [g for g in grouped['good_taxonomies'] if g is not None]
                     good_taxonomies = (
@@ -449,9 +450,17 @@ class Summariser:
                         if len(good_taxonomies) > 0
                         else None
                     )
+                    percent_identities = [p for p in grouped['percent_identities'] if p is not None]
+                    percent_identities = (
+                        list(itertools.chain(*percent_identities))
+                        if len(percent_identities) > 0
+                        else None
+                    )
                 elif tax_assignment_method == None or tax_assignment_method == NO_ASSIGNMENT_METHOD:
                     good_taxonomies = None
+                    percent_identities = None
                 data['good_taxonomies'] = [good_taxonomies]
+                data['percent_identities'] = [percent_identities]
             return pd.DataFrame(data)
 
         transformed = df.groupby(['sequence','gene'], as_index=True).apply(combine_rows).reset_index()[ar.fields]
