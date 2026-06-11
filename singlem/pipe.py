@@ -923,8 +923,6 @@ class SearchPipe:
                 self.aligned_lengths = []
                 self.orf_names = []
                 self.known_sequence_taxonomies = []
-                self.good_taxonomies = []
-                self.percent_identities = []
 
         seq_to_collected_info = {}
         for s in sequences:
@@ -932,8 +930,6 @@ class SearchPipe:
                 per_read_taxonomies is None:
                 tax = None
                 equal_best_tax = None
-                good_tax = None
-                percent_identities = None
             else:
                 try:
                     tax = per_read_taxonomies[s.name]
@@ -950,21 +946,8 @@ class SearchPipe:
                 if per_read_equal_best_taxonomies is not None:
                     try:
                         equal_best_tax = per_read_equal_best_taxonomies[s.name]
-
-                        if assignment_method in (
-                            DIAMOND_ASSIGNMENT_METHOD,
-                            SMAFA_NAIVE_THEN_DIAMOND_ASSIGNMENT_METHOD
-                        ):
-                            good_tax = equal_best_tax[1]
-                            pident = equal_best_tax[2]
-                            equal_best_tax = equal_best_tax[0]
-                        else:
-                            good_tax = None
-                            pident = None
                     except KeyError:
                         equal_best_tax = None
-                        good_tax = None
-                        pident = None
             
             try:
                 collected_info = seq_to_collected_info[s.aligned_sequence]
@@ -977,15 +960,11 @@ class SearchPipe:
                 collected_info.taxonomies.append(tax)
             if per_read_equal_best_taxonomies is not None and equal_best_tax is not None:
                 collected_info.equal_best_taxonomies.append(equal_best_tax)
-            if per_read_equal_best_taxonomies is not None and good_tax is not None:
-                collected_info.good_taxonomies.append(good_tax)
             collected_info.names.append(s.name)
             collected_info.unaligned_sequences.append(s.unaligned_sequence)
             collected_info.coverage += s.coverage_increment()
             collected_info.aligned_lengths.append(s.aligned_length)
             collected_info.orf_names.append(s.orf_name)
-            if per_read_equal_best_taxonomies is not None:
-                collected_info.percent_identities.append(pident)
 
         class Info:
             def __init__(self, seq, count, taxonomy, equal_best_taxonomies, names,
@@ -1038,15 +1017,15 @@ class SearchPipe:
                 tax = self._median_taxonomy(collected_info.taxonomies)
                 if per_read_equal_best_taxonomies is not None:
                     if otu_taxonomy_assignment_method == DIAMOND_ASSIGNMENT_METHOD:
-                        equal_best_tax = collected_info.equal_best_taxonomies
-                        good_tax = collected_info.good_taxonomies
-                        percent_identities = collected_info.percent_identities
+                        equal_best_tax, good_tax, percent_identities = zip(*collected_info.equal_best_taxonomies)
+                    elif otu_taxonomy_assignment_method == QUERY_BASED_ASSIGNMENT_METHOD:
+                        # For query assigned taxonomies this is right
+                        if collected_info.equal_best_taxonomies != []:
+                            equal_best_tax, good_tax = collected_info.equal_best_taxonomies[0]
                     else:
                         # For query assigned taxonomies this is right
                         if collected_info.equal_best_taxonomies != []:
                             equal_best_tax = collected_info.equal_best_taxonomies[0]
-                        if collected_info.good_taxonomies != []:
-                            good_tax = collected_info.good_taxonomies[0]
 
             yield Info(seq,
                        collected_info.count,

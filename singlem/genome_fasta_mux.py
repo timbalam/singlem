@@ -55,7 +55,8 @@ class GenomeFastaMux:
                     [read_unaligned_sequence],
                     otu.equal_best_hit_taxonomies(),
                     otu.taxonomy_assignment_method(),
-                    otu.good_taxonomies()
+                    otu.good_taxonomies(),
+                    otu.percent_identities()
                 ])
             for genome_name, otus in genome_to_otus.items():
                 genome_otu = [
@@ -71,7 +72,8 @@ class GenomeFastaMux:
                     [read_unaligned_sequence for otu in otus for read_unaligned_sequence in otu[9]],
                     otus[0][10],
                     otus[0][11],
-                    otus[0][12]
+                    otus[0][12],
+                    otus[0][13]
                 ]
                 new_otus.append(genome_otu)
 
