@@ -79,6 +79,7 @@ class Condenser:
         joint_l1_penalty = kwargs.pop('joint_l1_penalty', 1.0)
         joint_absence_weight = kwargs.pop('joint_absence_weight', 100.0)
         joint_min_markers = kwargs.pop('joint_min_markers', 3)
+        joint_sylph_weight = kwargs.pop('joint_sylph_weight', 1.0)
         if len(kwargs) > 0:
             raise Exception("Unexpected arguments detected: %s" % kwargs)
         logging.info("Using minimum taxon coverage of {}".format(min_taxon_coverage))
@@ -128,7 +129,8 @@ class Condenser:
             sylph_hits = self._sylph_hits_for_sample(sample, sylph_sample_to_hits) if sylph_profile is not None else None
             yield self._condense_a_sample(sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage,
                 True, apply_diamond_expectation_maximisation, metapackage, output_after_em_otu_table, viral_mode,
-                sylph_hits, alpha, joint, joint_l1_penalty, joint_absence_weight, joint_min_markers)
+                sylph_hits, alpha, joint, joint_l1_penalty, joint_absence_weight, joint_min_markers,
+                joint_sylph_weight)
 
     def _validate_sylph_against_metapackage(self, sylph_sample_to_hits, metapackage):
         '''Shared-DB sanity check: warn if many sylph species are not found among
@@ -163,7 +165,8 @@ class Condenser:
     def _condense_a_sample(self, sample, sample_otus, markers, target_domains, trim_percent, min_taxon_coverage,
             apply_query_expectation_maximisation, apply_diamond_expectation_maximisation, metapackage,
             output_after_em_otu_table, viral_mode, sylph_hits=None, alpha=None,
-            joint=False, joint_l1_penalty=1.0, joint_absence_weight=100.0, joint_min_markers=3):
+            joint=False, joint_l1_penalty=1.0, joint_absence_weight=100.0, joint_min_markers=3,
+            joint_sylph_weight = 1.0):
 
 
         # Remove off-target OTUs genes
@@ -205,7 +208,7 @@ class Condenser:
                 sample, sample_otus, sylph_hits if sylph_hits is not None else {},
                 domain_marker_counts=domain_marker_counts,
                 alpha=alpha, l1_penalty=joint_l1_penalty, absence_weight=joint_absence_weight,
-                min_markers=joint_min_markers)
+                min_markers=joint_min_markers, sylph_weight = joint_sylph_weight)
             self._push_down_genus_to_species(condensed_otus, 0.1)
             self._report_taxonomic_level_assignment_stats(condensed_otus)
             return condensed_otus
