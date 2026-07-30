@@ -714,7 +714,9 @@ class Condenser:
                                                 genes_per_domain,
                                                 coverage_rank_penalty = None,
                                                 mask_otus = None,
-                                                max_num_steps = None):
+                                                max_num_steps = None,
+                                                sylph_weight = 1,
+                                                sylph_profile = None):
         
         # Set up initial conditions.
         # taxon -> (cov_v, marker -> n -> prev_v)
@@ -773,6 +775,40 @@ class Condenser:
                 mask_residues[idx] = otu.coverage
             
             residues.append(residue)
+
+        if sylph_profile is not None:
+            for (idx, (_, sylph_cov, sylph_tax)) in enumerate(sylph_profile):
+                residue = sylph_cov
+                clean_tax = TaxonomyUtils.clean_taxonomy_string(sylph_tax)
+
+                if clean_tax == 'Root':
+                    continue
+
+                tax = clean_tax
+                for par in TaxonomyUtils.ancestor_taxonomies(clean_tax):
+                    try:
+                        (coverage, gene_to_otu_to_prev) = taxon_to_params[tax]
+                    except KeyError:
+                        gene_to_otu_to_prev = {}
+                        coverage = 1
+                        taxon_to_params[tax] = (coverage, gene_to_otu_to_prev)
+                    
+                    try:
+                        otu_to_prev = gene_to_otu_to_prev[marker]
+                    except KeyError:
+                        otu_to_prev = {}
+                        gene_to_otu_to_prev[marker] = otu_to_prev
+                    
+                    if not idx in otu_to_prev:
+                        prev = 1
+                        otu_to_prev[idx] = prev
+                        residue -= coverage * prev
+                        par_to_child_to_count[par][tax] += 1
+                    tax = par
+
+                    if not regularised_augment_hits: break
+                
+                residues.append(residue)
 
         if mask_otus is not None:
             if len(mask_residues) == 0:

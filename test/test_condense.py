@@ -59,6 +59,30 @@ class Tests(unittest.TestCase):
             loss
         )
 
+    def test_apply_nonneg_matrix_factorisation_core_trivial_sylph(self):
+        otus = ArchiveOtuTable()
+        otus.fields = ArchiveOtuTable.FIELDS_VERSION5
+        # str.split('gene    sample    sequence    num_hits    coverage    taxonomy    read_names    nucleotides_aligned  taxonomy_by_known? read_unaligned_sequences equal_best_hit_taxonomies taxonomy_assignment_method good_taxonomies')
+        otus.data = [
+            ['g1', 'sample1', 'seq1', 1, 1.05,'Root;d__Bacteria;p;c;o;f;g;tax1','','','','',['Root; d__Bacteria; p;c;o;f;g; tax1'],QUERY_BASED_ASSIGNMENT_METHOD, []]
+        ]
+        sylph_profile = [
+            ['sample1', 1.05, 'd__Bacteria;p;c;o;f;g;tax1']
+        ]
+        species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']}, sylph_profile = sylph_profile)
+        self.assertEqual(
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 1.05},
+            species_to_coverage
+        )
+        self.assertEqual(
+            otus.data,
+            coverage_parts_otus.data
+        )
+        self.assertEqual(
+            {'NMF loss': 0.0, 'NMF steps' : 2},
+            loss
+        )
+
     def test_apply_nonneg_matrix_factorisation_core_split1(self):
         otus = ArchiveOtuTable()
         otus.fields = ArchiveOtuTable.FIELDS_VERSION5
