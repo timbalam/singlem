@@ -42,8 +42,10 @@ class TaxonomyUtils:
 
     @staticmethod
     def clean_taxonomy_string(taxonomy_string):
-        return re.sub(" *; *", ";",
-                      taxonomy_string.strip())
+        return TaxonomyUtils.ensure_root(
+            re.sub(" *; *", ";",
+                   taxonomy_string.strip())
+        )
 
     @staticmethod
     def ancestor_taxonomies(taxonomy_string):
