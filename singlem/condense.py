@@ -779,7 +779,7 @@ class Condenser:
 
         if sylph_profile is not None:
             for (idx, (_, sylph_cov, sylph_tax)) in enumerate(sylph_profile, start = idx+1):
-                residue = sylph_weight * sylph_cov
+                residue = sylph_cov
                 clean_tax = TaxonomyUtils.clean_taxonomy_string(sylph_tax)
                 tax = clean_tax
                 for par in TaxonomyUtils.ancestor_taxonomies(clean_tax):
@@ -791,10 +791,10 @@ class Condenser:
                         sylph_otu_to_prev = {}
                         taxon_to_params[tax] = (coverage, gene_to_otu_to_prev, sylph_otu_to_prev)
                     
-                    if not idx in sylph_otu_to_rev:
+                    if not idx in sylph_otu_to_prev:
                         prev = 1
                         sylph_otu_to_prev[idx] = prev
-                        residue -= sylph_weight * coverage * prev
+                        residue -= coverage * prev
                         par_to_child_to_count[par][tax] += 1
                     tax = par
 
@@ -833,7 +833,7 @@ class Condenser:
                             for idx, prev in otu_to_prev.items():
                                 residues[idx] += coverage * prev
                         for idx, prev in sylph_otu_to_prev.items():
-                            residues[idx] += sylph_weight * coverage * prev
+                            residues[idx] += coverage * prev
                         del taxon_to_params[tax]
 
         # Include zero-abundance dummy OTU for each
@@ -996,6 +996,7 @@ class Condenser:
             max_change_update = np.nan
 
             import pdb; pdb.set_trace()
+            print(taxon_to_params)
 
             # Pass over taxa
             for tax, (coverage, gene_to_otu_to_prev, sylph_otu_to_prev) in taxon_to_params.items():
@@ -1004,7 +1005,7 @@ class Condenser:
                         # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
                         residues[idx] += coverage * prev
                 for idx, prev in sylph_otu_to_prev.items():
-                    residues[idx] += sylph_weight * coverage * prev
+                    residues[idx] += coverage * prev
 
                 # Algorithm 1 from Taslaman 2012
                 prev_sq_sum = 0
@@ -1053,23 +1054,36 @@ class Condenser:
                     # residues[i] += coverage * prev
                     #
                     consts.append(
-                        ((residues[idx] * coverage + delta * sylph_weight * prev) / (coverage ** 2 + delta), idx, prev)
+                        ((residues[idx] * coverage + delta * prev) / (coverage ** 2 + delta), idx, prev)
                     )
                 consts.sort(reverse = True)
                 alpha = 1
-                for j, (const, _) in enumerate(consts, start = 1):
+                for j, (const, _, _) in enumerate(consts, start = 1):
                     alpha -= const
                     min_pd = alpha / j
                     if (j == len(consts)): break
                     if (min_pd <= -consts[j][0]): break
                 
-                for jj, (const, idx) in enumerate(consts, start = 1):
+                for jj, (const, idx, prev) in enumerate(consts, start = 1):
                     if (jj <= j):
                         next_prev = const + min_pd
                         prev_sq_sum += next_prev ** 2
                         prev_residue_sum += next_prev * residues[idx]
                     else:
                         next_prev = 0
+                        
+                    assert next_prev >= 0
+
+                    # update sylph_sotu_to_prev in place!
+                    sylph_otu_to_prev[idx] = next_prev
+                    
+                    coef_change = abs(next_prev - prev)
+
+                    if coef_change > max_coef_change:
+                        max_coef_change = coef_change
+                        max_change_desc = f"{tax} OTU {idx} prevalence"
+                        max_change_current = prev
+                        max_change_update = next_prev
                 
                 next_coverage = (
                     max(
@@ -1087,8 +1101,8 @@ class Condenser:
                 for otu_to_next_prev in gene_to_otu_to_prev.values():
                     for idx, next_prev in otu_to_next_prev.items():
                         residues[idx] -= next_prev * next_coverage
-                for idx, prev in sylph_otu_to_prev.items():
-                    residues[idx] -= sylph_weight * next_coverage * prev
+                for idx, next_prev in sylph_otu_to_prev.items():
+                    residues[idx] -= next_coverage * next_prev
                 
                 # update coverage in place!
                 taxon_to_params[tax] = (next_coverage, gene_to_otu_to_prev, sylph_otu_to_prev)
