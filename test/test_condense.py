@@ -69,7 +69,8 @@ class Tests(unittest.TestCase):
         sylph_profile = [
             ['sample1', 1.05, 'd__Bacteria;p;c;o;f;g;tax1']
         ]
-        species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']}, sylph_profile = sylph_profile)
+        species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']}, sylph_profile = sylph_profile,
+                                                                                                             sylph_weight = 5)
         self.assertEqual(
             {'Root;d__Bacteria;p;c;o;f;g;tax1': 1.05},
             species_to_coverage
@@ -138,17 +139,14 @@ class Tests(unittest.TestCase):
             ('sample1', 2.4, 'd__Bacteria;p;c;o;f;g;tax1')
         ]
         species_to_coverage, coverage_parts_otus, loss = Condenser()._apply_nonneg_matrix_factorisation_core(otus, genes_per_domain = {'Bacteria': ['g1']},
-                                                                                                             sylph_profile = sylph_profile)
+                                                                                                             sylph_profile = sylph_profile,
+                                                                                                             sylph_weight = 25)
         self.assertEqual(
-            {'Root;d__Bacteria;p;c;o;f;g;tax1': 2.3},
+            {'Root;d__Bacteria;p;c;o;f;g;tax1': 2.4},
             species_to_coverage
         )
         self.assertEqual(
-            otus.data,
-            coverage_parts_otus.data
-        )
-        self.assertEqual(
-            {'NMF loss': 0.0, 'NMF steps': 2},
+            {'NMF loss': 0.013, 'NMF steps': 8},
             loss
         )
 

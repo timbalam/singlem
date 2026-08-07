@@ -722,6 +722,7 @@ class Condenser:
         # taxon -> (cov_v, marker -> n -> prev_v)
         taxon_to_params = {}
         residues = []
+        weights = []
         mask_residues = {}
         # track aggregate counts of OTUs for ancestors of best hit taxa
         # taxon -> taxon -> num_otus
@@ -775,6 +776,7 @@ class Condenser:
             if mask_otus is not None and otu.sequence in mask_otus:
                 mask_residues[idx] = otu.coverage
             
+            weights.append(1)
             residues.append(residue)
 
         if sylph_profile is not None:
@@ -801,6 +803,7 @@ class Condenser:
                     if not regularised_augment_hits: break
                 
                 residues.append(residue)
+                weights.append(sylph_weight)
 
         if mask_otus is not None:
             if len(mask_residues) == 0:
@@ -844,6 +847,7 @@ class Condenser:
             for marker in markers:
                 domain_genes_otus.append((marker, len(residues)))
                 residues.append(0)
+                weights.append(1)
             genes_otus_per_domain[domain] = domain_genes_otus
 
         for tax, (coverage, gene_to_otu_to_prev, _sylph_otu_to_prev) in taxon_to_params.items():
@@ -868,7 +872,7 @@ class Condenser:
             mask_residues = mask_residues,
             coverage_penalty = coverage_rank_penalty,
             max_num_steps = max_num_steps,
-            sylph_weight = sylph_weight
+            weights = weights
         )
         
         # Round each genome to 4 decimal places in coverage, removing entries with 0 coverage
@@ -983,10 +987,12 @@ class Condenser:
                                                         mask_residues = {},
                                                         coverage_penalty = None,
                                                         max_num_steps = None,
-                                                        sylph_weight = 1):
+                                                        weights = None):
 
         num_steps = 1
         delta = 1e-4
+        if weights is None:
+            weights = [1] * len(residues)
 
         while True: # while not converged
 
@@ -994,9 +1000,6 @@ class Condenser:
             max_change_desc = ""
             max_change_current = np.nan
             max_change_update = np.nan
-
-            import pdb; pdb.set_trace()
-            print(taxon_to_params)
 
             # Pass over taxa
             for tax, (coverage, gene_to_otu_to_prev, sylph_otu_to_prev) in taxon_to_params.items():
@@ -1030,8 +1033,8 @@ class Condenser:
                     for jj, (const, idx, prev) in enumerate(consts, start = 1):
                         if (jj <= j):
                             next_prev = const + min_pd
-                            prev_sq_sum += next_prev ** 2
-                            prev_residue_sum += next_prev * residues[idx]
+                            prev_sq_sum += weights[idx] * next_prev ** 2
+                            prev_residue_sum += weights[idx] * next_prev * residues[idx]
                         else:
                             next_prev = 0
                         
@@ -1067,8 +1070,8 @@ class Condenser:
                 for jj, (const, idx, prev) in enumerate(consts, start = 1):
                     if (jj <= j):
                         next_prev = const + min_pd
-                        prev_sq_sum += next_prev ** 2
-                        prev_residue_sum += next_prev * residues[idx]
+                        prev_sq_sum += weights[idx] * next_prev ** 2
+                        prev_residue_sum += weights[idx] * next_prev * residues[idx]
                     else:
                         next_prev = 0
                         
@@ -1085,14 +1088,12 @@ class Condenser:
                         max_change_current = prev
                         max_change_update = next_prev
                 
-                next_coverage = (
-                    max(
-                        prev_residue_sum - coverage_penalty[TaxonomyUtils.rank(tax)] / 2,
-                        0
-                    ) / prev_sq_sum
+                next_coverage = max(
+                    prev_residue_sum - coverage_penalty[TaxonomyUtils.rank(tax)] / 2
                     if coverage_penalty is not None
-                    else prev_residue_sum / prev_sq_sum
-                )
+                    else prev_residue_sum,
+                    0
+                ) / prev_sq_sum
 
                 if next_coverage < 0:
                     assert next_coverage > -0.001
