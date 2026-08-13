@@ -712,7 +712,9 @@ class Condenser:
 
     def _apply_nonneg_matrix_factorisation_core(self, sample_otus, *,
                                                 genes_per_domain,
-                                                coverage_rank_penalty = None,
+                                                rank_target_coverage = None,
+                                                target_l2_penalty = 1,
+                                                l1_penalty = None,
                                                 mask_otus = None,
                                                 max_num_steps = None,
                                                 sylph_weight = 1,
@@ -731,10 +733,12 @@ class Condenser:
         # If using regularisation,
         # also OTUs to ancestor taxa of best hits.
         regularised_augment_hits = (
-            coverage_rank_penalty is not None and max(coverage_rank_penalty) > 0
+            l1_penalty is not None and l1_penalty > 0
+            or rank_target_coverage is not None and target_l2_penalty > 0
         )
-        for (idx, otu) in enumerate(sample_otus):
+        for otu in sample_otus:
             residue = otu.coverage
+            idx = len(residues)
             if (otu.taxonomy_assignment_method()
                 in (QUERY_BASED_ASSIGNMENT_METHOD, DIAMOND_ASSIGNMENT_METHOD)):
                 marker = otu.marker
@@ -751,18 +755,21 @@ class Condenser:
                             tax = clean_tax
                             for par in TaxonomyUtils.ancestor_taxonomies(clean_tax):
                                 try:
-                                    (coverage, gene_to_otu_to_prev, sylph_otu_to_prev) = taxon_to_params[tax]
+                                    (coverage, blocks_otu_to_prev, index) = taxon_to_params[tax]
                                 except KeyError:
-                                    gene_to_otu_to_prev = {}
+                                    index = {"gene": {}}
+                                    blocks_otu_to_prev = []
                                     coverage = 1
-                                    sylph_otu_to_prev = {}
-                                    taxon_to_params[tax] = (coverage, gene_to_otu_to_prev, sylph_otu_to_prev)
+                                    taxon_to_params[tax] = (coverage, blocks_otu_to_prev, index)
                                 
                                 try:
-                                    otu_to_prev = gene_to_otu_to_prev[marker]
+                                    block_id = index["gene"][marker]
                                 except KeyError:
-                                    otu_to_prev = {}
-                                    gene_to_otu_to_prev[marker] = otu_to_prev
+                                    block_id = len(blocks_otu_to_prev)
+                                    blocks_otu_to_prev.append({})
+                                    index["gene"][marker] = block_id
+                                    
+                                otu_to_prev = blocks_otu_to_prev[block_id]
                                 
                                 if not idx in otu_to_prev:
                                     prev = 1
@@ -780,18 +787,28 @@ class Condenser:
             residues.append(residue)
 
         if sylph_profile is not None:
-            for (idx, (_, sylph_cov, sylph_tax)) in enumerate(sylph_profile, start = idx+1):
+            for _, sylph_cov, sylph_tax in sylph_profile:
                 residue = sylph_cov
+                idx = len(residues)
                 clean_tax = TaxonomyUtils.clean_taxonomy_string(sylph_tax)
                 tax = clean_tax
                 for par in TaxonomyUtils.ancestor_taxonomies(clean_tax):
                     try:
-                        (coverage, gene_to_otu_to_prev, sylph_otu_to_prev) = taxon_to_params[tax]
+                        (coverage, blocks_otu_to_prev, index) = taxon_to_params[tax]
                     except KeyError:
-                        gene_to_otu_to_prev = {}
                         coverage = 1
-                        sylph_otu_to_prev = {}
-                        taxon_to_params[tax] = (coverage, gene_to_otu_to_prev, sylph_otu_to_prev)
+                        index = {"gene": {}}
+                        blocks_otu_to_prev = []
+                        taxon_to_params[tax] = (coverage, blocks_otu_to_prev, index)
+
+                    try:
+                        sylph_block = index["sylph"]
+                    except KeyError:
+                        sylph_block = len(blocks_otu_to_prev)
+                        blocks_otu_to_prev.append({})
+                        index["sylph"] = sylph_block
+
+                    sylph_otu_to_prev = blocks_otu_to_prev[sylph_block]
                     
                     if not idx in sylph_otu_to_prev:
                         prev = 1
@@ -831,14 +848,29 @@ class Condenser:
 
                     if count <= max_child_child_count:
                         # remove degenerate taxa
-                        coverage, gene_to_otu_to_prev, sylph_otu_to_prev = taxon_to_params[tax]
-                        for otu_to_prev in gene_to_otu_to_prev.values():
+                        coverage, blocks_otu_to_prev, _index = taxon_to_params[tax]
+                        for otu_to_prev in blocks_otu_to_prev:
                             for idx, prev in otu_to_prev.items():
                                 residues[idx] += coverage * prev
-                        for idx, prev in sylph_otu_to_prev.items():
-                            residues[idx] += coverage * prev
                         del taxon_to_params[tax]
 
+        # Include target coverage OTU for each rank
+        if rank_target_coverage is not None:
+            assert len(rank_target_coverage) == 8
+            rank_otus = list(range(len(residues), len(residues) + len(rank_target_coverage)))
+            residues += rank_target_coverage
+            weights += [target_l2_penalty] * len(rank_target_coverage)
+            for tax, (coverage, blocks_otu_to_prev, index) in taxon_to_params.items():
+                prev = 1
+                idx = rank_otus[TaxonomyUtils.rank(tax)]
+                otu_to_prev = {idx: prev}
+                target_block = len(blocks_otu_to_prev)
+                blocks_otu_to_prev.append(otu_to_prev)
+                residues[idx] -= coverage * prev
+                index["target"] = target_block
+        else:
+            rank_otus = None
+        
         # Include zero-abundance dummy OTU for each
         # targetted domain for each marker
         genes_otus_per_domain = {}
@@ -850,27 +882,41 @@ class Condenser:
                 weights.append(1)
             genes_otus_per_domain[domain] = domain_genes_otus
 
-        for tax, (coverage, gene_to_otu_to_prev, _sylph_otu_to_prev) in taxon_to_params.items():
+        for tax, (coverage, blocks_otu_to_prev, index) in taxon_to_params.items():
             for marker, idx in genes_otus_per_domain[TaxonomyUtils.domain(tax)]:
                 
                 try:
-                    otu_to_prev = gene_to_otu_to_prev[marker]
+                    block_id = index["gene"][marker]
                 except KeyError:
-                    otu_to_prev = {}
-                    gene_to_otu_to_prev[marker] = otu_to_prev
+                    block_id = len(blocks_otu_to_prev)
+                    blocks_otu_to_prev.append({})
+                    index["gene"][marker] = block_id
+
+                otu_to_prev = blocks_otu_to_prev[block_id]
                 
                 prev = 1
                 residues[idx] -= coverage * prev
                 otu_to_prev[idx] = prev
         
         if len(taxon_to_params) == 0: return None, sample_otus, {}
-        
+
+        def predict_otu_coverages(taxon_to_params, weights):
+            otu_coverages = []
+            for tax, (coverage, blocks_otu_to_prev, index) in taxon_to_params.items():
+                for otu_to_prev in blocks_otu_to_prev:
+                    for idx, prev in otu_to_prev.items():
+                        if idx >= len(otu_coverages):
+                            otu_coverages += [0] * (idx + 1 - len(otu_coverages))
+                        otu_coverages[idx] += weights[idx] * coverage * prev
+
+            return otu_coverages
+
         for idx in mask_residues.keys(): residues[idx] = 0 # mask residues
         num_steps = self._apply_nonneg_matrix_factorisation_core_inplace(
             taxon_to_params,
             residues,
             mask_residues = mask_residues,
-            coverage_penalty = coverage_rank_penalty,
+            coverage_penalty = [l1_penalty] * 8 if l1_penalty is not None else None,
             max_num_steps = max_num_steps,
             weights = weights
         )
@@ -883,8 +929,8 @@ class Condenser:
             cov2 = round(coverage, 2)
             if cov2 > 0:
                 rounded_taxon_to_coverage[tax] = cov2
-            if coverage_rank_penalty is not None:
-                reg_loss += coverage_rank_penalty[TaxonomyUtils.rank(tax)] * coverage
+            if l1_penalty is not None:
+                reg_loss += l1_penalty * coverage
 
         coverage_parts_otus = ArchiveOtuTable()
         coverage_parts_otus.fields = sample_otus.fields
@@ -892,24 +938,21 @@ class Condenser:
         mask_loss = 0
 
         if mask_otus:
-            for tax, (coverage, gene_to_otu_to_prev, _sylph_otu_to_prev) in taxon_to_params.items():
-                for otu_to_prev in gene_to_otu_to_prev.values():
+            for tax, (coverage, blocks_otu_to_prev, _index) in taxon_to_params.items():
+                for otu_to_prev in blocks_otu_to_prev:
                     for idx, prev in otu_to_prev.items():
                         try:
                             mask_residues[idx] -= coverage * prev
                         except KeyError:
                             continue
-            
-            for idx, residue in mask_residues.items():
-                mask_loss += (residue) ** 2
 
         for idx, otu in enumerate(sample_otus):
-            
             if idx in mask_residues:
                 residue = mask_residues[idx]
+                mask_loss += weights[idx] * (residue ** 2)
             else:
                 residue = residues[idx]
-                loss += (residue) ** 2
+                loss += weights[idx] * (residue ** 2)
 
             # residue = otu.coverage - sum_k prev_k * coverage_k
             expected_coverage = otu.coverage - residue
@@ -935,12 +978,13 @@ class Condenser:
                             tax = clean_tax
                             for par in TaxonomyUtils.ancestor_taxonomies(clean_tax):
                                 try:
-                                    (coverage, gene_to_otu_to_prev, _) = taxon_to_params[tax]
+                                    (coverage, blocks_otu_to_prev, index) = taxon_to_params[tax]
                                 except KeyError:
                                     continue
 
                                 try:
-                                    prev = gene_to_otu_to_prev[otu.marker][idx]
+                                    block_id = index["gene"][otu.marker]
+                                    prev = blocks_otu_to_prev[block_id][idx]
                                 except KeyError:
                                     continue
                         
@@ -961,21 +1005,24 @@ class Condenser:
                                 tax = par
         
         if sylph_profile is not None:
-            for idx, (_, sylph_cov, sylph_tax) in enumerate(sylph_profile, start = idx+1):
-                residue = residues[idx]
-                loss += (residue) ** 2
+            for idx, _ in enumerate(sylph_profile, start = idx+1):
+                loss += weights[idx] * (residues[idx] ** 2)
+
+        # loss from rank target coverage
+        if rank_target_coverage is not None:
+            for idx in range(idx + 1, idx + 8):
+                reg_loss += weights[idx] * (residues[idx] ** 2)
 
         # loss from residues for dummy marker rows
-        for residue in residues[idx+1:]:
-            loss += (residue) ** 2
+        for idx in range(idx + 1, len(residues)):
+            reg_loss += weights[idx] * (residues[idx] ** 2)
 
         
         loss_dict = {}
         loss_dict['NMF loss'] = round(loss, 3)
         if mask_otus is not None:
             loss_dict['NMF mask loss'] = round(mask_loss, 3)
-        if coverage_rank_penalty is not None:
-            loss_dict['NMF penalised loss'] = round(loss + reg_loss, 3)
+        loss_dict['NMF penalised loss'] = round(loss + reg_loss, 3)
         loss_dict['NMF steps'] = num_steps
         
         for key, value in loss_dict.items():
@@ -1002,18 +1049,17 @@ class Condenser:
             max_change_update = np.nan
 
             # Pass over taxa
-            for tax, (coverage, gene_to_otu_to_prev, sylph_otu_to_prev) in taxon_to_params.items():
-                for otu_to_prev in gene_to_otu_to_prev.values():
+            for tax in taxon_to_params.keys():
+                (coverage, blocks_otu_to_prev, index) = taxon_to_params[tax]
+                for otu_to_prev in blocks_otu_to_prev:
                     for idx, prev in otu_to_prev.items():
                         # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
                         residues[idx] += coverage * prev
-                for idx, prev in sylph_otu_to_prev.items():
-                    residues[idx] += coverage * prev
 
                 # Algorithm 1 from Taslaman 2012
                 prev_sq_sum = 0
                 prev_residue_sum = 0
-                for otu_to_prev in gene_to_otu_to_prev.values():
+                for otu_to_prev in blocks_otu_to_prev:
                     consts = []
                     for idx, prev in otu_to_prev.items():
                         # # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
@@ -1037,9 +1083,9 @@ class Condenser:
                             prev_residue_sum += weights[idx] * next_prev * residues[idx]
                         else:
                             next_prev = 0
-                        
-                        assert next_prev >= 0
 
+                        assert next_prev >= 0
+    
                         # update otu_to_prev in place!
                         otu_to_prev[idx] = next_prev
                         
@@ -1051,42 +1097,6 @@ class Condenser:
                             max_change_current = prev
                             max_change_update = next_prev
 
-                consts = []
-                for idx, prev in sylph_otu_to_prev.items():
-                    # # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
-                    # residues[i] += coverage * prev
-                    #
-                    consts.append(
-                        ((residues[idx] * coverage + delta * prev) / (coverage ** 2 + delta), idx, prev)
-                    )
-                consts.sort(reverse = True)
-                alpha = 1
-                for j, (const, _, _) in enumerate(consts, start = 1):
-                    alpha -= const
-                    min_pd = alpha / j
-                    if (j == len(consts)): break
-                    if (min_pd <= -consts[j][0]): break
-                
-                for jj, (const, idx, prev) in enumerate(consts, start = 1):
-                    if (jj <= j):
-                        next_prev = const + min_pd
-                        prev_sq_sum += weights[idx] * next_prev ** 2
-                        prev_residue_sum += weights[idx] * next_prev * residues[idx]
-                    else:
-                        next_prev = 0
-                        
-                    assert next_prev >= 0
-
-                    # update sylph_sotu_to_prev in place!
-                    sylph_otu_to_prev[idx] = next_prev
-                    
-                    coef_change = abs(next_prev - prev)
-
-                    if coef_change > max_coef_change:
-                        max_coef_change = coef_change
-                        max_change_desc = f"{tax} OTU {idx} prevalence"
-                        max_change_current = prev
-                        max_change_update = next_prev
                 
                 next_coverage = max(
                     prev_residue_sum - coverage_penalty[TaxonomyUtils.rank(tax)] / 2
@@ -1099,14 +1109,12 @@ class Condenser:
                     assert next_coverage > -0.001
                     next_coverage = 0
 
-                for otu_to_next_prev in gene_to_otu_to_prev.values():
+                for otu_to_next_prev in blocks_otu_to_prev:
                     for idx, next_prev in otu_to_next_prev.items():
                         residues[idx] -= next_prev * next_coverage
-                for idx, next_prev in sylph_otu_to_prev.items():
-                    residues[idx] -= next_coverage * next_prev
                 
                 # update coverage in place!
-                taxon_to_params[tax] = (next_coverage, gene_to_otu_to_prev, sylph_otu_to_prev)
+                taxon_to_params[tax] = (next_coverage, blocks_otu_to_prev, index)
 
                 coef_change = abs(next_coverage - coverage)
                 if coef_change > max_coef_change:
