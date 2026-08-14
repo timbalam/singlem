@@ -854,20 +854,20 @@ class Condenser:
                                 residues[idx] += coverage * prev
                         del taxon_to_params[tax]
 
-        # Include target coverage OTU for each rank
+        # Include target coverage OTU for each rank > species
         if rank_target_coverage is not None:
-            assert len(rank_target_coverage) == 8
+            assert len(rank_target_coverage) == 7
             rank_otus = list(range(len(residues), len(residues) + len(rank_target_coverage)))
             residues += rank_target_coverage
             weights += [target_l2_penalty] * len(rank_target_coverage)
             for tax, (coverage, blocks_otu_to_prev, index) in taxon_to_params.items():
+                rank = TaxonomyUtils.rank(tax)
+                if rank == 7: continue
                 prev = 1
-                idx = rank_otus[TaxonomyUtils.rank(tax)]
+                idx = rank_otus[rank]
                 otu_to_prev = {idx: prev}
-                target_block = len(blocks_otu_to_prev)
                 blocks_otu_to_prev.append(otu_to_prev)
                 residues[idx] -= coverage * prev
-                index["target"] = target_block
         else:
             rank_otus = None
         
@@ -899,17 +899,6 @@ class Condenser:
                 otu_to_prev[idx] = prev
         
         if len(taxon_to_params) == 0: return None, sample_otus, {}
-
-        def predict_otu_coverages(taxon_to_params, weights):
-            otu_coverages = []
-            for tax, (coverage, blocks_otu_to_prev, index) in taxon_to_params.items():
-                for otu_to_prev in blocks_otu_to_prev:
-                    for idx, prev in otu_to_prev.items():
-                        if idx >= len(otu_coverages):
-                            otu_coverages += [0] * (idx + 1 - len(otu_coverages))
-                        otu_coverages[idx] += weights[idx] * coverage * prev
-
-            return otu_coverages
 
         for idx in mask_residues.keys(): residues[idx] = 0 # mask residues
         num_steps = self._apply_nonneg_matrix_factorisation_core_inplace(
@@ -1050,7 +1039,7 @@ class Condenser:
 
             # Pass over taxa
             for tax in taxon_to_params.keys():
-                (coverage, blocks_otu_to_prev, index) = taxon_to_params[tax]
+                coverage, blocks_otu_to_prev, index = taxon_to_params[tax]
                 for otu_to_prev in blocks_otu_to_prev:
                     for idx, prev in otu_to_prev.items():
                         # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
@@ -1062,9 +1051,6 @@ class Condenser:
                 for otu_to_prev in blocks_otu_to_prev:
                     consts = []
                     for idx, prev in otu_to_prev.items():
-                        # # Update residues in place! (This is part of Algorithm 2 from Taslaman 2012)
-                        # residues[i] += coverage * prev
-                        #
                         consts.append(
                             ((residues[idx] * coverage + delta * prev) / (coverage ** 2 + delta), idx, prev)
                         )
@@ -1079,7 +1065,7 @@ class Condenser:
                     for jj, (const, idx, prev) in enumerate(consts, start = 1):
                         if (jj <= j):
                             next_prev = const + min_pd
-                            prev_sq_sum += weights[idx] * next_prev ** 2
+                            prev_sq_sum += weights[idx] * (next_prev ** 2)
                             prev_residue_sum += weights[idx] * next_prev * residues[idx]
                         else:
                             next_prev = 0
@@ -2398,3 +2384,15 @@ class CondensedCommunityProfileKronaWriter:
         extern.run(cmd)
         for f in sample_tempfiles:
             f.close()
+
+
+def predict_otu_coverages(taxon_to_params):
+    otu_coverages = []
+    for coverage, blocks_otu_to_prev, _index in taxon_to_params.values():
+        for otu_to_prev in blocks_otu_to_prev:
+            for idx, prev in otu_to_prev.items():
+                if idx >= len(otu_coverages):
+                    otu_coverages += [0] * (idx + 1 - len(otu_coverages))
+                otu_coverages[idx] += coverage * prev
+
+    return otu_coverages
