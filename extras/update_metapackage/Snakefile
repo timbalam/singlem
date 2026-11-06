@@ -631,6 +631,7 @@ rule test_old_metapackage:
         "-p {output.profile} "
         "--taxonomic-profile-krona {output.profile_krona} "
         "--threads {threads} "
+        "--no-weebill "
         "&> {log}"
 
 rule sra_fractions_assigned_to_each_level:

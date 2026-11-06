@@ -1,0 +1,34 @@
+max_threads: 32
+compressed_genome_data: true
+gtdb_protein_fna_reps: /work/microbiome/msingle/mess/214_R232_renew/protein_fna_reps
+output_dir: /mnt/weka/scratch/microbiome/lambertt/update_metapackage_with_ncbi_names
+metapackage: /work/microbiome/db/singlem/S5.4.0.GTDB_r226.metapackage_20250331.smpkg.zb/payload_directory
+new_metapackage: ncbi_names.GTDB_r232.metapackage_20261106.smpkg
+new_version_number: ncbi_r232
+gtdb_protein_faa_reps: /work/microbiome/msingle/mess/214_R232_renew/protein_faa_reps
+# Whole representative genome assemblies (GTDB gtdb_genomes_reps_r232.tar.gz), used
+# to build the bundled weebill two-stage database. Required. File names must carry
+# the GCA_/GCF_ accession, as GTDB's do, since that is how weebill's genomes are
+# matched back to taxonomy.
+gtdb_genome_reps: /work/microbiome/db/gtdb/gtdb_release232/genomic_files_reps/gtdb_genomes_reps_r232
+# -c the weebill database is built at, and so also the -c reads are sketched at.
+weebill_c: 100
+gtdb_bac_tax: /work/microbiome/msingle/mess/239_R232_ncbi_taxonomy/bac120_taxonomy_r232_ncbi_names.tsv
+gtdb_arc_tax: /work/microbiome/msingle/mess/239_R232_ncbi_taxonomy/ar53_taxonomy_r232_nbci_names.tsv
+pfams: /work/microbiome/msingle/sam/HMMs/Pfam
+tigrfams: /work/microbiome/msingle/sam/HMMs/TIGRfams.HMM
+uniprot_seq: /work/microbiome/msingle/mess/214_R232_renew/uniprot_sprot.fa
+uniprot_tax: /work/microbiome/msingle/mess/214_R232_renew/uniprot_sprot_taxonomy.tsv
+sra_seqs_1:
+  DRR083195: /work/microbiome/msingle/sam/SRA/DRR083195_1.fastq
+  SRR1926147: /work/microbiome/msingle/sam/SRA/SRR1926147_1.fastq
+  SRR9224014: /work/microbiome/msingle/sam/SRA/SRR9224014_1.fastq
+sra_seqs_2:
+  DRR083195: /work/microbiome/msingle/sam/SRA/DRR083195_2.fastq
+  SRR1926147: /work/microbiome/msingle/sam/SRA/SRR1926147_2.fastq
+  SRR9224014: /work/microbiome/msingle/sam/SRA/SRR9224014_2.fastq
+gtdb_arc_metadata: /work/microbiome/msingle/mess/239_R232_ncbi_taxonomy/gtdb_r232_metadata.updated_reps-draft-ncbi_names.tsv
+gtdb_bac_metadata: /work/microbiome/msingle/mess/239_R232_ncbi_taxonomy/gtdb_r232_metadata.updated_reps-draft-ncbi_names.tsv
+# These 2 constants must jive with those in Metapackage
+taxonomy_database_name: Genome Taxonomy Database (GTDB)
+taxonomy_database_version: R232
